@@ -804,6 +804,12 @@ const FamilyChoreApp = () => {
   // CHILD SCREEN
   if (screen === 'child' && familyData && currentChildId) {
     const childData = familyData.children?.[currentChildId];
+    
+    // Get tasks available to this child
+    const availableTasks = familyData.taskTemplates ? Object.values(familyData.taskTemplates).filter(task => {
+      // Show if "any child" or assigned to this child
+      return task.assignType === 'any' || task.assignedChild === currentChildId || (task.assignType === 'rotate');
+    }) : [];
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-pink-50 p-4">
@@ -837,11 +843,46 @@ const FamilyChoreApp = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow p-6 text-center">
-            <Calendar className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-gray-600">Coming soon: Your tasks will appear here</p>
-            <p className="text-gray-500 text-sm mt-2">Parents are setting up your tasks - check back soon!</p>
-          </div>
+          {availableTasks.length === 0 ? (
+            <div className="bg-white rounded-2xl shadow p-6 text-center">
+              <Calendar className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-gray-600">No tasks available yet</p>
+              <p className="text-gray-500 text-sm mt-2">Check back later or talk to your parents!</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Available Tasks</h2>
+              {availableTasks.map(task => (
+                <div key={task.id} className="bg-white rounded-2xl shadow p-6 hover:shadow-lg transition">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold text-gray-900">{task.title}</h3>
+                      <div className="flex items-center gap-4 mt-3">
+                        <div className="flex items-center gap-1 text-green-600 font-bold">
+                          <DollarSign className="w-5 h-5" />
+                          {parseFloat(task.amount).toFixed(2)}
+                        </div>
+                        <p className="text-sm text-gray-600 capitalize">
+                          {task.frequency === 'once' && 'One time'}
+                          {task.frequency === 'daily' && 'Daily'}
+                          {task.frequency === 'weekly' && 'Weekly'}
+                          {task.frequency === 'specific' && 'Specific days'}
+                        </p>
+                        {task.assignType === 'assigned' && (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Assigned to you</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-2 rounded-lg font-bold hover:shadow-lg transition whitespace-nowrap"
+                    >
+                      Accept
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
