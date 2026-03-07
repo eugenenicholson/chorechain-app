@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, DollarSign, Edit2, Trash2, Calendar, LogOut, CheckCircle2, Clock, X, ArrowRight, TrendingUp } from 'lucide-react';
+import { Plus, DollarSign, Edit2, Trash2, Calendar, LogOut, CheckCircle2, X, ArrowRight, TrendingUp } from 'lucide-react';
 
 // Firebase imports
 import { initializeApp } from "firebase/app";
