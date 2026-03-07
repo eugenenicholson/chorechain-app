@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import './App.css';
 import { Plus, DollarSign, Edit2, Trash2, Calendar, LogOut, CheckCircle2, X, ArrowRight, TrendingUp } from 'lucide-react';
 
 // Firebase imports
