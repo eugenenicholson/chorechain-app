@@ -59,4 +59,5 @@ const FamilyChoreApp = () => {
   // ============ FIREBASE FUNCTIONS ============
 
   // Listen to auth state
-  // eslint-disable-next-line react-hooks/e
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
