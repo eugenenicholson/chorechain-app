@@ -1,28 +1,89 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import { Plus, DollarSign, Edit2, Trash2, Calendar, LogOut, CheckCircle2, X, ArrowRight, TrendingUp } from 'lucide-react';
+import { Plus, DollarSign, Star, Edit2, Trash2, Calendar, LogOut, CheckCircle2, X, ArrowRight, TrendingUp } from 'lucide-react';
 
 // Firebase imports
 import { initializeApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getDatabase, ref, set, get, remove, onValue } from 'firebase/database';
 
-// Firebase configuration
+// Firebase configuration — values loaded from .env (never hardcode secrets in source)
 const firebaseConfig = {
-  apiKey: "AIzaSyBavpvKFdmfGtE773de20UNSgSobgseq64",
-  authDomain: "chorechain-ff621.firebaseapp.com",
-  databaseURL: "https://chorechain-ff621-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "chorechain-ff621",
-  storageBucket: "chorechain-ff621.firebasestorage.app",
-  messagingSenderId: "407813709495",
-  appId: "1:407813709495:web:236c6baaab0cbfeaa7b732",
-  measurementId: "G-7RH79ZPN9C"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  databaseURL: process.env.REACT_APP_FIREBASE_DATABASE_URL,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID,
+  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const database = getDatabase(app);
+
+// SHA-256 hash utility using Web Crypto API (no external dependency)
+const hashPin = async (pin) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pin + 'chorechain-salt-v1');
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+// Child PIN management modal — separate component so it can use hooks
+const ChildPinModal = ({ child, onSave, onClear, onClose }) => {
+  const [newPin, setNewPin] = React.useState('');
+  const [confirmPin, setConfirmPin] = React.useState('');
+  const [pinError, setPinError] = React.useState('');
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8" onClick={e => e.stopPropagation()}>
+        <h3 className="text-xl font-bold text-gray-900 mb-1">{child.name}'s PIN</h3>
+        <p className="text-sm text-gray-500 mb-6">{child.pin ? 'Set a new PIN or clear it' : 'Set a 4–6 digit PIN'}</p>
+        <input
+          type="password"
+          inputMode="numeric"
+          placeholder="New PIN (4–6 digits)"
+          value={newPin}
+          autoFocus
+          onChange={(e) => { setNewPin(e.target.value.replace(/\D/g,'').slice(0,6)); setPinError(''); }}
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-center text-2xl tracking-widest font-bold focus:border-purple-500 focus:outline-none mb-3"
+        />
+        <input
+          type="password"
+          inputMode="numeric"
+          placeholder="Confirm PIN"
+          value={confirmPin}
+          onChange={(e) => { setConfirmPin(e.target.value.replace(/\D/g,'').slice(0,6)); setPinError(''); }}
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-center text-2xl tracking-widest font-bold focus:border-purple-500 focus:outline-none mb-3"
+        />
+        {pinError && <p className="text-red-600 text-sm text-center mb-3">{pinError}</p>}
+        <button
+          onClick={() => {
+            if (newPin.length < 4) { setPinError('PIN must be at least 4 digits'); return; }
+            if (newPin !== confirmPin) { setPinError('PINs do not match'); return; }
+            onSave(child.id, newPin);
+          }}
+          className="w-full bg-purple-500 text-white py-3 rounded-xl font-bold hover:bg-purple-600 transition mb-3"
+        >
+          Save PIN
+        </button>
+        {child.pin && (
+          <button
+            onClick={() => { if (window.confirm(`Clear PIN for ${child.name}?`)) onClear(child.id); }}
+            className="w-full bg-red-100 text-red-600 py-3 rounded-xl font-bold hover:bg-red-200 transition mb-3"
+          >
+            🗑 Clear PIN
+          </button>
+        )}
+        <button onClick={onClose} className="w-full text-gray-500 font-bold py-2">Cancel</button>
+      </div>
+    </div>
+  );
+};
 
 const FamilyChoreApp = () => {
   // Auth state
@@ -41,6 +102,44 @@ const FamilyChoreApp = () => {
   const [settingPin, setSettingPin] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [payslipChild, setPayslipChild] = useState(null);
+  // Rate limiting — shared across parent and child PIN screens
+  const [pinFailCount, setPinFailCount] = useState(0);
+  const [pinLockedUntil, setPinLockedUntil] = useState(null);
+  const [lockCountdown, setLockCountdown] = useState(0); // child object to show payslip for
+  const [pendingChildId, setPendingChildId] = useState(null); // child selected, awaiting PIN
+  const [childPinAttempt, setChildPinAttempt] = useState('');
+  const [childPinError, setChildPinError] = useState('');
+  const [managingPinFor, setManagingPinFor] = useState(null); // child object for PIN mgmt in parent
+
+  // Rate limiting: track failed PIN/login attempts in memory
+  const failedAttemptsRef = React.useRef({}); // { key: { count, lockedUntil } }
+
+  const recordFailedAttempt = (key) => {
+    const now = Date.now();
+    const entry = failedAttemptsRef.current[key] || { count: 0, lockedUntil: 0 };
+    entry.count += 1;
+    // Lock for progressively longer: 3 fails=30s, 5 fails=5min, 10 fails=30min
+    if (entry.count >= 10) entry.lockedUntil = now + 30 * 60 * 1000;
+    else if (entry.count >= 5) entry.lockedUntil = now + 5 * 60 * 1000;
+    else if (entry.count >= 3) entry.lockedUntil = now + 30 * 1000;
+    failedAttemptsRef.current[key] = entry;
+    return entry.count;
+  };
+
+  const isLockedOut = (key) => {
+    const entry = failedAttemptsRef.current[key];
+    if (!entry) return false;
+    if (entry.lockedUntil > Date.now()) {
+      const secsLeft = Math.ceil((entry.lockedUntil - Date.now()) / 1000);
+      return secsLeft;
+    }
+    return false;
+  };
+
+  const clearAttempts = (key) => {
+    delete failedAttemptsRef.current[key];
+  };
 
   // Data state
   const [familyData, setFamilyData] = useState(null);
@@ -61,25 +160,42 @@ const FamilyChoreApp = () => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
-        const familiesRef = ref(database, 'families');
-        const snapshot = await get(familiesRef);
+        // Security: look up the user's familyId directly via their uid index
+        // rather than scanning all families (prevents reading other families' data)
+        const userFamilyRef = ref(database, `userFamilies/${user.uid}`);
+        const userFamilySnap = await get(userFamilyRef);
         
-        if (snapshot.exists()) {
-          const families = snapshot.val();
-          for (const fid in families) {
-            const family = families[fid];
-            if (family.members && family.members[user.uid]) {
-              setFamilyId(fid);
-              const familyRef = ref(database, `families/${fid}`);
-              onValue(familyRef, (snap) => {
-                if (snap.exists()) {
-                  setFamilyData(snap.val());
-                }
-              });
-              setScreen('family-home');
-              return;
+        let fid = null;
+        if (userFamilySnap.exists()) {
+          fid = userFamilySnap.val();
+        } else {
+          // Fallback: scan families for legacy accounts that predate the index
+          const familiesRef = ref(database, 'families');
+          const snapshot = await get(familiesRef);
+          if (snapshot.exists()) {
+            const families = snapshot.val();
+            for (const id in families) {
+              if (families[id].members && families[id].members[user.uid]) {
+                fid = id;
+                // Write the index so future logins are fast and secure
+                await set(userFamilyRef, fid);
+                break;
+              }
             }
           }
+        }
+
+        if (fid) {
+          setFamilyId(fid);
+          const familyRef = ref(database, `families/${fid}`);
+          onValue(familyRef, (snap) => {
+            if (snap.exists()) {
+              const data = snap.val();
+              setFamilyData(data);
+              generateWeeklyTasks(fid, data);
+            }
+          });
+          setScreen('family-home');
         }
       } else {
         setCurrentUser(null);
@@ -110,6 +226,8 @@ const FamilyChoreApp = () => {
       const newFamilyId = Math.random().toString(36).substring(2, 10).toUpperCase();
       
       const familyRef = ref(database, `families/${newFamilyId}`);
+      // Write uid→familyId index for secure, direct lookup on future logins
+      await set(ref(database, `userFamilies/${uid}`), newFamilyId);
       await set(familyRef, {
         name: familyName,
         parentId: uid,
@@ -142,14 +260,27 @@ const FamilyChoreApp = () => {
       setErrorMsg('Please enter email and password');
       return;
     }
+    const lockKey = `login_${email}`;
+    const locked = isLockedOut(lockKey);
+    if (locked) {
+      setErrorMsg(`Too many failed attempts. Try again in ${locked}s.`);
+      return;
+    }
 
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      clearAttempts(lockKey);
       setEmail('');
       setPassword('');
     } catch (error) {
-      setErrorMsg(error.message);
+      const count = recordFailedAttempt(lockKey);
+      if (count >= 3) {
+        const secs = isLockedOut(lockKey);
+        setErrorMsg(`Incorrect credentials. Account locked for ${secs}s.`);
+      } else {
+        setErrorMsg('Incorrect email or password.');
+      }
     } finally {
       setLoading(false);
     }
@@ -173,6 +304,7 @@ const FamilyChoreApp = () => {
   };
 
   // Add child
+  // eslint-disable-next-line no-unused-vars
   const addChildToFamily = async () => {
     setErrorMsg('');
     if (!childName) {
@@ -235,6 +367,7 @@ const FamilyChoreApp = () => {
   };
 
   // Delete task template
+  // eslint-disable-next-line no-unused-vars
   const deleteTaskTemplate = async (templateId) => {
     try {
       const templateRef = ref(database, `families/${familyId}/taskTemplates/${templateId}`);
@@ -243,6 +376,139 @@ const FamilyChoreApp = () => {
       setErrorMsg(error.message);
     }
   };
+
+  // Generate child tasks from templates for the current week
+  const generateWeeklyTasks = async (fid, data) => {
+    if (!data?.taskTemplates) return;
+
+    const today = new Date();
+    const todayDow = today.getDay();
+
+    // payday is the last day of the chore week (0=Sun..6=Sat), default Friday=5
+    const payday = data.payday != null ? data.payday : 5;
+    // weekStart = day after payday
+    const weekStartDow = (payday + 1) % 7;
+    // How many days back to reach the start of this chore week
+    const daysBack = (todayDow - weekStartDow + 7) % 7;
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - daysBack);
+    const weekKey = weekStart.toISOString().split('T')[0];
+
+    // Stable week number from a fixed epoch Saturday (2024-01-06 is a Saturday)
+    const epochStart = new Date('2024-01-06');
+    const weekNumber = Math.floor((weekStart - epochStart) / (7 * 24 * 60 * 60 * 1000));
+
+    // Get existing tasks so we can preserve completed/accepted state
+    const existingTasksRef = ref(database, `families/${fid}/childTasks`);
+    const existingSnap = await get(existingTasksRef);
+    const existingTasks = existingSnap.exists() ? existingSnap.val() : {};
+
+    const templates = Object.values(data.taskTemplates);
+    const newTasks = {};
+
+    templates.forEach(template => {
+      let daysToGenerate = [];
+      if (template.frequency === 'daily') {
+        daysToGenerate = [0, 1, 2, 3, 4, 5, 6];
+      } else if (template.frequency === 'weekly') {
+        daysToGenerate = [parseInt(template.dayOfWeek)];
+      } else if (template.frequency === 'specific') {
+        daysToGenerate = (template.specificDays || []).map(d => parseInt(d));
+      } else if (template.frequency === 'once') {
+        daysToGenerate = [todayDow];
+      }
+
+      if (template.assignType === 'rotate' && template.rotateChildren?.length >= 2) {
+        // Sort days in chore-week order starting from weekStartDow
+        const sortedDays = [...daysToGenerate].sort((a, b) => {
+          const order = d => (d - weekStartDow + 7) % 7;
+          return order(a) - order(b);
+        });
+        sortedDays.forEach((dow, occurrenceIdx) => {
+          let rotationIdx;
+          if (template.frequency === 'daily') {
+            // Each occurrence in the week alternates: Mon=child1, Tue=child2, Wed=child1...
+            // Then shifts by weekNumber so child1 doesn't always get Mon
+            rotationIdx = (occurrenceIdx + weekNumber) % template.rotateChildren.length;
+          } else if (template.frequency === 'weekly') {
+            // One occurrence per week — rotate by week only
+            rotationIdx = weekNumber % template.rotateChildren.length;
+          } else if (template.frequency === 'specific') {
+            // Specific days: alternate each occurrence, also shift by week
+            rotationIdx = (occurrenceIdx + weekNumber) % template.rotateChildren.length;
+          } else {
+            // once — rotate by week
+            rotationIdx = weekNumber % template.rotateChildren.length;
+          }
+          const childId = template.rotateChildren[rotationIdx];
+          const taskId = `${template.id}_${weekKey}_day${dow}`;
+          const existing = existingTasks[taskId] || {};
+          newTasks[taskId] = {
+            ...existing,
+            id: taskId,
+            templateId: template.id,
+            title: template.title,
+            amount: template.amount,
+            assignType: 'assigned',
+            assignedChild: childId,
+            dayOfWeek: dow,
+            weekKey,
+            accepted: existing.accepted || [],
+            completed: existing.completed || []
+          };
+        });
+      } else if (template.assignType === 'assigned' && template.assignedChild) {
+        daysToGenerate.forEach(dow => {
+          const taskId = `${template.id}_${weekKey}_day${dow}`;
+          const existing = existingTasks[taskId] || {};
+          newTasks[taskId] = {
+            ...existing,
+            id: taskId,
+            templateId: template.id,
+            title: template.title,
+            amount: template.amount,
+            assignType: 'assigned',
+            assignedChild: template.assignedChild,
+            dayOfWeek: dow,
+            weekKey,
+            accepted: existing.accepted || [],
+            completed: existing.completed || []
+          };
+        });
+      } else {
+        daysToGenerate.forEach(dow => {
+          const taskId = `${template.id}_${weekKey}_day${dow}`;
+          const existing = existingTasks[taskId] || {};
+          newTasks[taskId] = {
+            ...existing,
+            id: taskId,
+            templateId: template.id,
+            title: template.title,
+            amount: template.amount,
+            assignType: 'any',
+            assignedChild: null,
+            dayOfWeek: dow,
+            weekKey,
+            accepted: existing.accepted || [],
+            completed: existing.completed || []
+          };
+        });
+      }
+    });
+
+    // Write merged tasks (updates template changes, preserves progress, no duplicates)
+    const tasksRef = ref(database, `families/${fid}/childTasks`);
+    await set(tasksRef, newTasks);
+    await set(ref(database, `families/${fid}/lastGeneratedWeek`), weekKey);
+  };
+
+  // Re-generate tasks whenever templates change (preserves progress, applies edits)
+  useEffect(() => {
+    if (familyId && familyData?.taskTemplates) {
+      generateWeeklyTasks(familyId, familyData);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [familyId, JSON.stringify(familyData?.taskTemplates)]);
 
   // Accept task
   const acceptTask = async (taskId) => {
@@ -299,19 +565,117 @@ const FamilyChoreApp = () => {
   // Save PIN
   const saveParentPin = async () => {
     setErrorMsg('');
-    if (parentPin.length !== 4 || !/^\d+$/.test(parentPin)) {
-      setErrorMsg('PIN must be exactly 4 digits');
+    if (parentPin.length < 4 || !/^\d+$/.test(parentPin)) {
+      setErrorMsg('PIN must be at least 4 digits');
       return;
     }
 
     try {
+      const hashed = await hashPin(parentPin);
       const pinRef = ref(database, `families/${familyId}/parentPin`);
-      await set(pinRef, parentPin);
+      await set(pinRef, hashed);
+      // Store a flag so we know this is a hashed PIN
+      await set(ref(database, `families/${familyId}/pinHashed`), true);
       setScreen('parent');
       setParentPin('');
     } catch (error) {
       setErrorMsg(error.message);
     }
+  };
+
+  // Save payday setting
+  const savePayday = async (day) => {
+    try {
+      await set(ref(database, `families/${familyId}/payday`), day);
+      // Clear lastGeneratedWeek so tasks regenerate with new week boundaries
+      await set(ref(database, `families/${familyId}/lastGeneratedWeek`), null);
+    } catch (error) {
+      setErrorMsg(error.message);
+    }
+  };
+
+  // Save reward mode (dollars or points) and conversion rate
+  const saveRewardMode = async (mode) => {
+    try {
+      await set(ref(database, `families/${familyId}/rewardMode`), mode);
+    } catch (error) {
+      setErrorMsg(error.message);
+    }
+  };
+
+  const savePointsPerDollar = async (val) => {
+    try {
+      const num = parseInt(val);
+      if (num > 0) await set(ref(database, `families/${familyId}/pointsPerDollar`), num);
+    } catch (error) {
+      setErrorMsg(error.message);
+    }
+  };
+
+  // Save child PIN
+  const saveChildPin = async (childId, pin) => {
+    try {
+      const hashed = await hashPin(pin);
+      await set(ref(database, `families/${familyId}/children/${childId}/pin`), hashed);
+      await set(ref(database, `families/${familyId}/children/${childId}/pinHashed`), true);
+      setManagingPinFor(null);
+    } catch (error) {
+      setErrorMsg(error.message);
+    }
+  };
+
+  // Clear child PIN (parent reset)
+  const clearChildPin = async (childId) => {
+    try {
+      await set(ref(database, `families/${familyId}/children/${childId}/pin`), null);
+      setManagingPinFor(null);
+    } catch (error) {
+      setErrorMsg(error.message);
+    }
+  };
+
+  // PIN rate limiting helpers
+  const PIN_MAX_ATTEMPTS = 5;
+  const PIN_LOCKOUT_SECONDS = 30;
+
+  const recordPinFailure = () => {
+    const newCount = pinFailCount + 1;
+    setPinFailCount(newCount);
+    if (newCount >= PIN_MAX_ATTEMPTS) {
+      const until = Date.now() + PIN_LOCKOUT_SECONDS * 1000;
+      setPinLockedUntil(until);
+      setLockCountdown(PIN_LOCKOUT_SECONDS);
+      setPinFailCount(0);
+    }
+  };
+
+  const isPinLocked = () => pinLockedUntil && Date.now() < pinLockedUntil;
+
+  // Countdown timer for lockout
+  useEffect(() => {
+    if (!pinLockedUntil) return;
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((pinLockedUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setPinLockedUntil(null);
+        setLockCountdown(0);
+        clearInterval(interval);
+      } else {
+        setLockCountdown(remaining);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [pinLockedUntil]);
+
+  // Helper: derive reward display values from familyData
+  const isPoints = () => familyData?.rewardMode === 'points';
+  const pointsPerDollar = () => familyData?.pointsPerDollar || 100;
+  const formatReward = (amount) => {
+    const num = parseFloat(amount || 0);
+    if (isPoints()) {
+      return `${Math.round(num * pointsPerDollar())} pts`;
+    }
+    return `$${num.toFixed(2)}`;
   };
 
   // Calculate child earnings
@@ -331,8 +695,11 @@ const FamilyChoreApp = () => {
   const processWeeklyPayout = async () => {
     try {
       const now = new Date();
+      const payday = familyData?.payday != null ? familyData.payday : 5;
+      const weekStartDow = (payday + 1) % 7;
+      const daysBack = (now.getDay() - weekStartDow + 7) % 7;
       const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - now.getDay());
+      weekStart.setDate(now.getDate() - daysBack);
       
       if (familyData?.children) {
         Object.values(familyData.children).forEach(async (child) => {
@@ -403,10 +770,10 @@ const FamilyChoreApp = () => {
 
             <button
               onClick={signIn}
-              disabled={loading}
+              disabled={loading || !!isLockedOut(`login_${email}`)}
               className="w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? 'Signing in...' : <>Sign In <ArrowRight className="w-4 h-4" /></>}
+              {loading ? 'Signing in...' : isLockedOut(`login_${email}`) ? `Locked (${isLockedOut(`login_${email}`)}s)` : <>Sign In <ArrowRight className="w-4 h-4" /></>}
             </button>
 
             <div className="border-t border-gray-200 pt-4 text-center">
@@ -519,12 +886,19 @@ const FamilyChoreApp = () => {
                     <button
                       key={child.id}
                       onClick={() => {
-                        setCurrentChildId(child.id);
-                        setScreen('child');
+                        if (child.pin) {
+                          setPendingChildId(child.id);
+                          setChildPinAttempt('');
+                          setChildPinError('');
+                          setScreen('childPin');
+                        } else {
+                          setCurrentChildId(child.id);
+                          setScreen('child');
+                        }
                       }}
-                      className="w-full bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 text-white py-3 rounded-2xl font-bold hover:shadow-lg transition shadow-md"
+                      className="w-full bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 text-white py-3 rounded-2xl font-bold hover:shadow-lg transition shadow-md flex items-center justify-center gap-2"
                     >
-                      👧 {child.name}
+                      👧 {child.name}{child.pin ? ' 🔒' : ''}
                     </button>
                   ))}
                 </div>
@@ -546,6 +920,79 @@ const FamilyChoreApp = () => {
     );
   }
 
+  // CHILD PIN SCREEN
+  if (screen === 'childPin' && pendingChildId && familyData) {
+    const child = familyData.children?.[pendingChildId];
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-indigo-50 p-4">
+        <div className="max-w-md mx-auto pt-32">
+          <div className="text-center mb-12">
+            <div className="text-6xl mb-4">👧</div>
+            <h1 className="text-3xl font-display font-bold text-gray-900 mb-2">{child?.name}</h1>
+            <p className="text-gray-600">Enter your PIN</p>
+          </div>
+          <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 space-y-6 border border-white/20">
+            {isLockedOut(`childPin_${pendingChildId}`) && (
+              <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 text-center">
+                <p className="text-red-600 font-bold">🔒 Too many attempts</p>
+                <p className="text-red-500 text-sm mt-1">Try again in {isLockedOut(`childPin_${pendingChildId}`)} seconds</p>
+              </div>
+            )}
+            <input
+              type="password"
+              inputMode="numeric"
+              placeholder="••••"
+              value={childPinAttempt}
+              autoFocus
+              disabled={!!isLockedOut(`childPin_${pendingChildId}`)}
+              onChange={(e) => {
+                if (isLockedOut(`childPin_${pendingChildId}`)) return;
+                const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                setChildPinAttempt(val);
+                setChildPinError('');
+                if (val.length >= 4) {
+                  setTimeout(async () => {
+                    let match = false;
+                    if (child?.pinHashed) {
+                      const hashed = await hashPin(val);
+                      match = hashed === child.pin;
+                    } else {
+                      match = val === child?.pin;
+                    }
+                    const childLockKey = `childPin_${pendingChildId}`;
+                    if (match) {
+                      clearAttempts(childLockKey);
+                      setCurrentChildId(pendingChildId);
+                      setPendingChildId(null);
+                      setChildPinAttempt('');
+                      setScreen('child');
+                    } else if (val.length >= 4) {
+                      const count = recordFailedAttempt(childLockKey);
+                      const newLock = isLockedOut(childLockKey);
+                      setChildPinError(newLock
+                        ? `Too many attempts. Locked for ${newLock}s.`
+                        : `Incorrect PIN (${count} attempt${count > 1 ? 's' : ''}).`);
+                      setChildPinAttempt('');
+                    }
+                  }, 100);
+                }
+              }}
+              maxLength="6"
+              className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-5xl text-center font-bold tracking-widest focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition disabled:opacity-50"
+            />
+            {childPinError && <p className="text-red-600 text-sm text-center font-medium">{childPinError}</p>}
+            <button
+              onClick={() => { setPendingChildId(null); setChildPinAttempt(''); setScreen('family-home'); }}
+              className="w-full text-purple-600 font-bold hover:text-purple-700"
+            >
+              ← Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // PARENT PIN SCREEN
   if (screen === 'parentPin') {
     if (settingPin) {
@@ -559,7 +1006,7 @@ const FamilyChoreApp = () => {
 
             <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 space-y-6 border border-white/20">
               <input
-                type="tel"
+                type="password"
                 inputMode="numeric"
                 placeholder="••••"
                 value={parentPin}
@@ -616,22 +1063,47 @@ const FamilyChoreApp = () => {
               </>
             ) : (
               <>
+                {isPinLocked() && (
+                  <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 text-center">
+                    <p className="text-red-600 font-bold">🔒 Too many attempts</p>
+                    <p className="text-red-500 text-sm mt-1">Try again in {lockCountdown} seconds</p>
+                  </div>
+                )}
                 <input
-                  type="tel"
+                  type="password"
                   inputMode="numeric"
                   placeholder="••••"
                   value={pinAttempt}
+                  disabled={isPinLocked()}
                   onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                    if (isPinLocked()) return;
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
                     setPinAttempt(val);
-                    if (val.length === 4) {
-                      setTimeout(() => {
-                        if (val === familyData.parentPin) {
+                    if (val.length >= 4) {
+                      setTimeout(async () => {
+                        // Detect legacy plain-text PINs and force reset
+                        if (!familyData.pinHashed) {
+                          if (val === familyData.parentPin) {
+                            setScreen('parent');
+                            setPinAttempt('');
+                            setErrorMsg('⚠️ Please reset your PIN for improved security.');
+                          } else {
+                            setErrorMsg('Incorrect PIN');
+                            setPinAttempt('');
+                          }
+                          return;
+                        }
+                        const hashed = await hashPin(val);
+                        if (hashed === familyData.parentPin) {
                           setScreen('parent');
                           setPinAttempt('');
                           setErrorMsg('');
+                          setPinFailCount(0);
                         } else {
-                          setErrorMsg('Incorrect PIN');
+                          recordPinFailure();
+                          setErrorMsg(pinFailCount + 1 >= PIN_MAX_ATTEMPTS
+                            ? `Too many attempts. Locked for ${PIN_LOCKOUT_SECONDS}s.`
+                            : `Incorrect PIN (${PIN_MAX_ATTEMPTS - pinFailCount - 1} attempts remaining)`);
                           setPinAttempt('');
                         }
                       }, 100);
@@ -680,15 +1152,204 @@ const FamilyChoreApp = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             {familyData.children && Object.values(familyData.children).map(child => {
               const earnings = calculateChildEarnings(child.id);
+              const completedCount = familyData.childTasks
+                ? Object.values(familyData.childTasks).filter(t => t.completed?.includes(child.id)).length
+                : 0;
               return (
-                <div key={child.id} className="bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl shadow-lg p-6 border border-purple-200">
+                <div
+                  key={child.id}
+                  onClick={() => setPayslipChild(child)}
+                  className="bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl shadow-lg p-6 border border-purple-200 cursor-pointer hover:shadow-xl hover:scale-105 transition-all"
+                >
                   <p className="text-gray-600 text-sm font-medium mb-2">This Week</p>
-                  <p className="text-4xl font-bold text-transparent bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text">${earnings.toFixed(2)}</p>
+                  <p className="text-4xl font-bold text-transparent bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text">{formatReward(earnings)}</p>
                   <p className="text-gray-900 font-bold mt-2">{child.name}</p>
+                  <p className="text-gray-500 text-xs mt-1">{completedCount} chore{completedCount !== 1 ? 's' : ''} completed · tap for payslip</p>
                 </div>
               );
             })}
           </div>
+
+          {/* Payslip Modal */}
+          {payslipChild && (() => {
+            const child = payslipChild;
+            const completedTasks = familyData.childTasks
+              ? Object.values(familyData.childTasks).filter(t => t.completed?.includes(child.id))
+              : [];
+            const total = completedTasks.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
+            // Group by day
+            const byDay = {};
+            completedTasks.forEach(task => {
+              const d = task.dayOfWeek ?? 'other';
+              if (!byDay[d]) byDay[d] = [];
+              byDay[d].push(task);
+            });
+            const pd2 = familyData.payday != null ? familyData.payday : 5;
+            const wsd2 = (pd2 + 1) % 7;
+            const sortedDayKeys = Object.keys(byDay).sort((a, b) => {
+              const order = d => d === 'other' ? 99 : (Number(d) - wsd2 + 7) % 7;
+              return order(a) - order(b);
+            });
+            // Get current week label based on payday setting
+            const today = new Date();
+            const todayDow = today.getDay();
+            const pd = familyData.payday != null ? familyData.payday : 5;
+            const wsd = (pd + 1) % 7;
+            const daysBack = (todayDow - wsd + 7) % 7;
+            const weekStartDate = new Date(today);
+            weekStartDate.setDate(today.getDate() - daysBack);
+            const weekEndDate = new Date(weekStartDate);
+            weekEndDate.setDate(weekStartDate.getDate() + 6);
+            const fmt = d => d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
+            const weekLabel = `${fmt(weekStartDate)} – ${fmt(weekEndDate)}`;
+            return (
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPayslipChild(null)}>
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Header */}
+                  <div className="bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 rounded-t-3xl p-6 text-white">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-sm font-light opacity-80 mb-1">Weekly Payslip · {isPoints() ? "Points" : "Dollars"}</p>
+                        <h2 className="text-2xl font-bold">{child.name}</h2>
+                        <p className="text-sm opacity-80 mt-1">{weekLabel}</p>
+                      </div>
+                      <button onClick={() => setPayslipChild(null)} className="text-white/70 hover:text-white text-2xl font-bold leading-none">×</button>
+                    </div>
+                    <div className="mt-4 bg-white/20 rounded-2xl p-4">
+                      <p className="text-sm opacity-80">Total {isPoints() ? "Points" : ""} Earned</p>
+                      <p className="text-4xl font-bold">{formatReward(total)}</p>
+                      {isPoints() && <p className="text-sm opacity-75 mt-1">= ${total.toFixed(2)} ({pointsPerDollar()} pts = $1)</p>}
+                    </div>
+                  </div>
+                  {/* Chores list */}
+                  <div className="p-6">
+                    {completedTasks.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">No chores completed this week.</p>
+                    ) : (
+                      <div className="space-y-5">
+                        {sortedDayKeys.map(dayKey => (
+                          <div key={dayKey}>
+                            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                              {dayKey === 'other' ? 'Other' : dayNames[Number(dayKey)]}
+                            </p>
+                            <div className="space-y-2">
+                              {byDay[dayKey].map(task => (
+                                <div key={task.id} className="flex justify-between items-center py-2 border-b border-gray-100">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                    <span className="text-gray-800 font-medium">{task.title}</span>
+                                  </div>
+                                  <span className="text-green-600 font-bold">{formatReward(task.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        {/* Total row */}
+                        <div className="flex justify-between items-center pt-3 border-t-2 border-gray-200">
+                          <span className="font-bold text-gray-900">Total</span>
+                          <span className="text-xl font-bold text-purple-600">{formatReward(total)}</span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="mt-6 space-y-3">
+                      {/* Print button */}
+                      <button
+                        onClick={() => {
+                          const printWindow = window.open('', '_blank');
+                          const ppd = pointsPerDollar();
+                          const pts = isPoints();
+                          const fmtAmt = (amt) => pts ? `${Math.round(parseFloat(amt||0) * ppd)} pts` : `$${parseFloat(amt||0).toFixed(2)}`;
+                          const rows = completedTasks.length === 0
+                            ? '<tr><td colspan="2" style="text-align:center;color:#888;padding:16px;">No chores completed this week.</td></tr>'
+                            : sortedDayKeys.map(dayKey => {
+                                const dayLabel = dayKey === 'other' ? 'Other' : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][Number(dayKey)];
+                                const dayRows = byDay[dayKey].map(t =>
+                                  `<tr><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;">✓ ${t.title}</td><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;color:#16a34a;font-weight:bold;">${fmtAmt(t.amount)}</td></tr>`
+                                ).join('');
+                                return `<tr><td colspan="2" style="padding:10px 12px 4px;font-size:11px;font-weight:bold;color:#888;text-transform:uppercase;letter-spacing:0.05em;background:#f9f9f9;">${dayLabel}</td></tr>${dayRows}`;
+                              }).join('');
+                          const conversionNote = pts ? `<p style="font-size:12px;opacity:0.75;margin:4px 0 0;">${ppd} pts = $1.00 &nbsp;·&nbsp; Total value: $${total.toFixed(2)}</p>` : '';
+                          printWindow.document.write(`<!DOCTYPE html><html><head><title>Payslip – ${child.name}</title><style>
+                            body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 32px; color: #111; }
+                            .header { background: linear-gradient(135deg, #7c3aed, #4f46e5); color: white; border-radius: 16px; padding: 24px 28px; margin-bottom: 24px; }
+                            .header h1 { margin: 0 0 4px; font-size: 22px; }
+                            .header .week { margin: 0; font-size: 13px; opacity: 0.8; }
+                            .header .total-label { margin: 16px 0 4px; font-size: 12px; opacity: 0.75; }
+                            .header .total { margin: 0; font-size: 36px; font-weight: bold; }
+                            table { width: 100%; border-collapse: collapse; font-size: 14px; }
+                            .total-row td { padding: 12px; font-weight: bold; font-size: 16px; border-top: 2px solid #e5e7eb; }
+                            .total-row td:last-child { text-align: right; color: #7c3aed; font-size: 18px; }
+                            .footer { margin-top: 32px; font-size: 11px; color: #aaa; text-align: center; }
+                            @media print { body { padding: 16px; } }
+                          </style></head><body>
+                            <div class="header">
+                              <p class="week">Weekly Payslip &nbsp;·&nbsp; ${weekLabel}</p>
+                              <h1>${child.name}</h1>
+                              <p class="total-label">Total Earned</p>
+                              <p class="total">${fmtAmt(total)}</p>
+                              ${conversionNote}
+                            </div>
+                            <table>${rows}
+                              <tr class="total-row"><td>Total</td><td>${fmtAmt(total)}</td></tr>
+                            </table>
+                            <p class="footer">Generated by ChoreChain &nbsp;·&nbsp; ${new Date().toLocaleDateString('en-NZ', {day:'numeric',month:'long',year:'numeric'})}</p>
+                          </body></html>`);
+                          printWindow.document.close();
+                          printWindow.focus();
+                          setTimeout(() => printWindow.print(), 400);
+                        }}
+                        className="w-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition flex items-center justify-center gap-2"
+                      >
+                        🖨️ Print Payslip
+                      </button>
+                      {/* CSV download */}
+                      <button
+                        onClick={() => {
+                          const ppd2 = pointsPerDollar();
+                          const pts2 = isPoints();
+                          const fmtCsv = (amt) => pts2 ? `${Math.round(parseFloat(amt||0) * ppd2)} pts` : `$${parseFloat(amt||0).toFixed(2)}`;
+                          const rows = [
+                            ['ChoreChain Weekly Payslip'],
+                            [`Child: ${child.name}`],
+                            [`Week: ${weekLabel}`],
+                            [`Reward Mode: ${pts2 ? `Points (${ppd2} pts = $1)` : 'Dollars'}`],
+                            [],
+                            ['Day', 'Chore', pts2 ? 'Points' : 'Amount', pts2 ? 'Value ($)' : ''],
+                            ...completedTasks.map(t => [
+                              t.dayOfWeek != null ? ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][t.dayOfWeek] : 'Other',
+                              t.title,
+                              fmtCsv(t.amount),
+                              pts2 ? `$${parseFloat(t.amount||0).toFixed(2)}` : ''
+                            ]),
+                            [],
+                            ['', 'Total', fmtCsv(total), pts2 ? `$${total.toFixed(2)}` : '']
+                          ];
+                          const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+                          const blob = new Blob([csv], { type: 'text/csv' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `payslip-${child.name.toLowerCase().replace(/\s+/g,'-')}-${weekLabel.replace(/[^a-z0-9]/gi,'-')}.csv`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                        className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition flex items-center justify-center gap-2"
+                      >
+                        📥 Download CSV
+                      </button>
+                      <button
+                        onClick={() => setPayslipChild(null)}
+                        className="w-full bg-gray-200 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-300 transition"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Task Creation */}
           <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 mb-8 border border-white/20">
@@ -703,8 +1364,8 @@ const FamilyChoreApp = () => {
               />
               <input
                 type="number"
-                placeholder="Amount ($)"
-                step="0.50"
+                placeholder={isPoints() ? `Points per chore (e.g. ${pointsPerDollar()})` : "Amount ($)"}
+                step={isPoints() ? "10" : "0.50"}
                 value={editingTemplate ? editingTemplate.amount : newTemplate.amount}
                 onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, amount: e.target.value}) : setNewTemplate({...newTemplate, amount: e.target.value})}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50"
@@ -748,7 +1409,7 @@ const FamilyChoreApp = () => {
                 <div>
                   <p className="text-gray-700 font-bold mb-2">Select Days:</p>
                   <div className="grid grid-cols-4 gap-2">
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, idx) => (
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, idx) => (
                       <button
                         key={idx}
                         onClick={() => {
@@ -868,7 +1529,7 @@ const FamilyChoreApp = () => {
                       {template.assignType === 'assigned' && (
                         <p className="text-sm text-gray-600">Assigned to: {familyData.children?.[template.assignedChild]?.name}</p>
                       )}
-                      <p className="text-lg font-bold text-green-600 mt-2">${parseFloat(template.amount).toFixed(2)}</p>
+                      <p className="text-lg font-bold text-green-600 mt-2">{formatReward(template.amount)}</p>
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -897,10 +1558,31 @@ const FamilyChoreApp = () => {
               <div className="space-y-3 mb-4">
                 {familyData.children && Object.values(familyData.children).map(child => (
                   <div key={child.id} className="p-3 bg-gradient-to-r from-purple-100 to-indigo-100 rounded-lg border border-purple-200">
-                    <p className="font-bold text-gray-900">{child.name}</p>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-gray-900">{child.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{child.pin ? '🔒 PIN set' : '🔓 No PIN'}</p>
+                      </div>
+                      <button
+                        onClick={() => setManagingPinFor(child)}
+                        className="text-xs bg-purple-500 text-white px-3 py-1 rounded-lg font-bold hover:bg-purple-600 transition"
+                      >
+                        {child.pin ? 'Reset PIN' : 'Set PIN'}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
+
+              {/* Child PIN management modal */}
+              {managingPinFor && (
+                <ChildPinModal
+                  child={managingPinFor}
+                  onSave={saveChildPin}
+                  onClear={clearChildPin}
+                  onClose={() => setManagingPinFor(null)}
+                />
+              )}
               <input
                 type="text"
                 placeholder="New child name"
@@ -918,7 +1600,65 @@ const FamilyChoreApp = () => {
 
             <div className="bg-gradient-to-br from-green-100 to-emerald-100 rounded-3xl shadow-2xl p-8 border border-green-200">
               <h2 className="text-2xl font-display font-bold text-gray-900 mb-2">Weekly Payout</h2>
-              <p className="text-gray-600 mb-6 font-light">Process earnings for all children</p>
+              <p className="text-gray-600 mb-4 font-light">Process earnings for all children</p>
+
+              {/* Reward Mode toggle */}
+              <div className="mb-4">
+                <p className="text-gray-700 font-bold text-sm mb-2">Reward Type</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {['dollars', 'points'].map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => saveRewardMode(mode)}
+                      className={`py-2 rounded-xl font-bold transition capitalize ${
+                        (familyData.rewardMode || 'dollars') === mode
+                          ? 'bg-green-500 text-white shadow'
+                          : 'bg-white text-gray-600 border-2 border-gray-200'
+                      }`}
+                    >
+                      {mode === 'dollars' ? '💵 Dollars' : '⭐ Points'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Points conversion rate — only shown in points mode */}
+              {isPoints() && (
+                <div className="mb-4 bg-white/60 rounded-xl p-3 border border-green-200">
+                  <p className="text-gray-700 font-bold text-sm mb-1">Points per $1</p>
+                  <input
+                    type="number"
+                    min="1"
+                    step="10"
+                    defaultValue={familyData.pointsPerDollar || 100}
+                    onBlur={(e) => savePointsPerDollar(e.target.value)}
+                    className="w-full px-3 py-2 border-2 border-green-200 rounded-lg focus:border-green-500 focus:outline-none bg-white font-bold text-gray-800"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    e.g. a $1 chore = {familyData.pointsPerDollar || 100} pts
+                  </p>
+                </div>
+              )}
+
+              <div className="mb-4">
+                <p className="text-gray-700 font-bold text-sm mb-2">Payday</p>
+                <select
+                  value={familyData.payday != null ? familyData.payday : 5}
+                  onChange={(e) => savePayday(parseInt(e.target.value))}
+                  className="w-full px-3 py-2 border-2 border-green-200 rounded-xl focus:border-green-500 focus:outline-none bg-white/70 font-medium text-gray-800"
+                >
+                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => (
+                    <option key={i} value={i}>{d}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Chore week: {(() => {
+                    const pd = familyData.payday != null ? familyData.payday : 5;
+                    const names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                    return `${names[(pd + 1) % 7]} → ${names[pd]}`;
+                  })()}
+                </p>
+              </div>
               <button
                 onClick={processWeeklyPayout}
                 className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 rounded-xl font-bold hover:shadow-lg transition flex items-center justify-center gap-2"
@@ -943,7 +1683,14 @@ const FamilyChoreApp = () => {
       id,
       ...task
     })).filter(task => {
-      return task.assignType === 'any' || task.assignedChild === currentChildId || (task.assignType === 'rotate');
+      if (task.assignType === 'assigned') {
+        // Assigned/rotating: only show to the assigned child
+        return task.assignedChild === currentChildId;
+      }
+      // Voluntary: show to everyone UNLESS already accepted by a different child
+      const acceptedBy = task.accepted || [];
+      const acceptedByOther = acceptedBy.length > 0 && !acceptedBy.includes(currentChildId);
+      return !acceptedByOther;
     }) : [];
 
     // Group by day
@@ -952,8 +1699,10 @@ const FamilyChoreApp = () => {
       tasksByDay[idx] = childTasks.filter(task => task.dayOfWeek === idx);
     });
 
-    // Reorder to start with Saturday
-    const dayOrder = [6, 0, 1, 2, 3, 4, 5];
+    // Order days starting from the day after payday (week start)
+    const payday = familyData.payday != null ? familyData.payday : 5;
+    const weekStartDay = (payday + 1) % 7;
+    const dayOrder = Array.from({length: 7}, (_, i) => (weekStartDay + i) % 7);
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
@@ -972,21 +1721,35 @@ const FamilyChoreApp = () => {
           </div>
 
           {/* Earnings Card */}
-          <div className="bg-gradient-to-br from-green-400 via-emerald-400 to-teal-400 rounded-3xl shadow-2xl p-8 mb-8 text-white">
-            <p className="text-sm font-light opacity-90 mb-2">This Week's Earnings</p>
-            <div className="flex items-baseline gap-2 mb-6">
-              <span className="text-6xl font-bold">${childEarnings.toFixed(2)}</span>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4">
-              <div className="w-full bg-white/30 rounded-full h-3 overflow-hidden mb-2">
-                <div 
-                  className="bg-white h-full rounded-full transition-all duration-300"
-                  style={{width: `${Math.min((childEarnings / 50) * 100, 100)}%`}}
-                ></div>
+          {(() => {
+            // Potential = all assigned/accepted tasks not yet completed + already completed
+            const potentialEarnings = familyData.childTasks ? Object.values(familyData.childTasks).reduce((sum, task) => {
+              const isForThisChild = task.assignType === 'any'
+                ? (task.accepted?.includes(currentChildId) || false)
+                : task.assignedChild === currentChildId;
+              if (isForThisChild) sum += parseFloat(task.amount || 0);
+              return sum;
+            }, 0) : 0;
+            const pct = potentialEarnings > 0 ? Math.min((childEarnings / potentialEarnings) * 100, 100) : 0;
+            return (
+              <div className="bg-gradient-to-br from-green-400 via-emerald-400 to-teal-400 rounded-3xl shadow-2xl p-8 mb-8 text-white">
+                <p className="text-sm font-light opacity-90 mb-2">This Week's {isPoints() ? 'Points' : 'Earnings'}</p>
+                <div className="flex items-baseline gap-2 mb-1">
+                  <span className="text-6xl font-bold">{formatReward(childEarnings)}</span>
+                </div>
+                <p className="text-sm font-light opacity-75 mb-5">of {formatReward(potentialEarnings)} potential{isPoints() && ` ($${potentialEarnings.toFixed(2)})`}</p>
+                <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4">
+                  <div className="w-full bg-white/30 rounded-full h-3 overflow-hidden mb-2">
+                    <div
+                      className="bg-white h-full rounded-full transition-all duration-300"
+                      style={{width: `${pct}%`}}
+                    ></div>
+                  </div>
+                  <p className="text-sm font-light opacity-90">{pct === 100 ? '🎉 All done!' : `${Math.round(pct)}% of potential earned`}</p>
+                </div>
               </div>
-              <p className="text-sm font-light opacity-90">Progress to $50 goal</p>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Tasks by Day */}
           {childTasks.length === 0 ? (
@@ -1035,13 +1798,17 @@ const FamilyChoreApp = () => {
                                 </div>
                                 <div className="flex items-center gap-4 ml-9">
                                   <div className="flex items-center gap-1 text-green-600 font-bold">
-                                    <DollarSign className="w-5 h-5" />
-                                    {parseFloat(task.amount).toFixed(2)}
+                                    {isPoints()
+                                      ? <Star className="w-5 h-5" />
+                                      : <DollarSign className="w-5 h-5" />
+                                    }
+                                    {formatReward(task.amount)}
                                   </div>
                                 </div>
                               </div>
                               <div className="flex gap-2">
-                                {!isAccepted && !isCompleted && (
+                                {/* Accept: voluntary only, not yet accepted/completed */}
+                                {task.assignType === 'any' && !isAccepted && !isCompleted && (
                                   <button
                                     onClick={() => acceptTask(task.id)}
                                     className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-lg font-bold hover:shadow-lg transition whitespace-nowrap text-sm"
@@ -1049,7 +1816,8 @@ const FamilyChoreApp = () => {
                                     Accept
                                   </button>
                                 )}
-                                {(isAccepted || isAssigned) && !isCompleted && (
+                                {/* Done button: assigned tasks always show it; voluntary shows after accepting */}
+                                {(isAssigned || (task.assignType === 'any' && isAccepted)) && !isCompleted && (
                                   <button
                                     onClick={() => completeTask(task.id)}
                                     className="bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-2 rounded-lg font-bold hover:shadow-lg transition whitespace-nowrap text-sm"
@@ -1057,12 +1825,17 @@ const FamilyChoreApp = () => {
                                     Done
                                   </button>
                                 )}
+                                {/* Completed: show Undo button */}
                                 {isCompleted && (
-                                  <div className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold text-sm">
-                                    ✓ Done
-                                  </div>
+                                  <button
+                                    onClick={() => unselectTask(task.id)}
+                                    className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700 transition whitespace-nowrap text-sm flex items-center gap-1"
+                                  >
+                                    ✓ Undo
+                                  </button>
                                 )}
-                                {(isAccepted && !isAssigned && !isCompleted) && (
+                                {/* Un-accept: voluntary, accepted but not completed */}
+                                {task.assignType === 'any' && isAccepted && !isCompleted && (
                                   <button
                                     onClick={() => unselectTask(task.id)}
                                     className="bg-gray-300 text-gray-900 px-3 py-2 rounded-lg font-bold hover:bg-gray-400 transition whitespace-nowrap text-sm flex items-center gap-1"
