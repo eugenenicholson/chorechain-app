@@ -4,7 +4,7 @@ import { Plus, DollarSign, Star, Edit2, Trash2, Calendar, LogOut, CheckCircle2, 
 
 // Firebase imports
 import { initializeApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from 'firebase/auth';
 import { getDatabase, ref, set, get, remove, onValue } from 'firebase/database';
 
 // Firebase configuration — values loaded from .env (never hardcode secrets in source)
@@ -118,6 +118,9 @@ const FamilyChoreApp = () => {
   const [pinBypassPassword, setPinBypassPassword] = useState('');
   const [pinBypassError, setPinBypassError] = useState('');
   const [changePinMode, setChangePinMode] = useState(false);
+  const [deleteAccountMode, setDeleteAccountMode] = useState(false);
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
+  const [deleteAccountError, setDeleteAccountError] = useState('');
 
   // Rate limiting: track failed PIN/login attempts in memory
   const failedAttemptsRef = React.useRef({}); // { key: { count, lockedUntil } }
@@ -347,6 +350,40 @@ const FamilyChoreApp = () => {
       setSettingPin(true);
     } catch (error) {
       setPinBypassError('Incorrect password. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete account and all family data
+  const deleteAccount = async () => {
+    setDeleteAccountError('');
+    if (!deleteAccountPassword) {
+      setDeleteAccountError('Please enter your password to confirm');
+      return;
+    }
+    setLoading(true);
+    try {
+      // Re-authenticate first (Firebase requires this before deletion)
+      const credential = EmailAuthProvider.credential(currentUser.email, deleteAccountPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // Delete all family data from database
+      if (familyId) {
+        await remove(ref(database, `families/${familyId}`));
+        await remove(ref(database, `userFamilies/${currentUser.uid}`));
+      }
+
+      // Delete the Firebase Auth account
+      await deleteUser(currentUser);
+
+      // onAuthStateChanged will fire and reset to login screen
+    } catch (error) {
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        setDeleteAccountError('Incorrect password. Please try again.');
+      } else {
+        setDeleteAccountError('Could not delete account. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -1865,6 +1902,45 @@ const FamilyChoreApp = () => {
                   </button>
                 </div>
               )}
+
+              <div className="border-t border-gray-200 pt-6 mt-2">
+                <p className="text-sm text-gray-500 mb-4">Danger Zone</p>
+                {!deleteAccountMode ? (
+                  <button
+                    onClick={() => { setDeleteAccountMode(true); setDeleteAccountPassword(''); setDeleteAccountError(''); }}
+                    className="w-full bg-red-50 border-2 border-red-200 text-red-600 py-3 rounded-xl font-bold hover:bg-red-100 transition"
+                  >
+                    🗑 Delete Account & All Data
+                  </button>
+                ) : (
+                  <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 space-y-3">
+                    <p className="text-red-800 font-bold text-sm text-center">⚠️ This permanently deletes your account and all family data. This cannot be undone.</p>
+                    <input
+                      type="password"
+                      placeholder="Enter your password to confirm"
+                      value={deleteAccountPassword}
+                      onChange={(e) => { setDeleteAccountPassword(e.target.value); setDeleteAccountError(''); }}
+                      onKeyPress={(e) => e.key === 'Enter' && deleteAccount()}
+                      className="w-full px-4 py-3 border-2 border-red-200 rounded-xl focus:border-red-500 focus:outline-none bg-white transition"
+                      autoFocus
+                    />
+                    {deleteAccountError && <p className="text-red-600 text-sm text-center font-medium">{deleteAccountError}</p>}
+                    <button
+                      onClick={deleteAccount}
+                      disabled={loading}
+                      className="w-full bg-red-500 text-white py-3 rounded-xl font-bold hover:bg-red-600 transition disabled:opacity-50"
+                    >
+                      {loading ? 'Deleting...' : 'Yes, Delete Everything'}
+                    </button>
+                    <button
+                      onClick={() => { setDeleteAccountMode(false); setDeleteAccountPassword(''); setDeleteAccountError(''); }}
+                      className="w-full text-gray-500 font-bold hover:text-gray-700 text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
