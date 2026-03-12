@@ -4,7 +4,7 @@ import { Plus, DollarSign, Star, Edit2, Trash2, Calendar, LogOut, CheckCircle2, 
 
 // Firebase imports
 import { initializeApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { getDatabase, ref, set, get, remove, onValue } from 'firebase/database';
 
 // Firebase configuration — values loaded from .env (never hardcode secrets in source)
@@ -111,6 +111,12 @@ const FamilyChoreApp = () => {
   const [childPinAttempt, setChildPinAttempt] = useState('');
   const [childPinError, setChildPinError] = useState('');
   const [managingPinFor, setManagingPinFor] = useState(null); // child object for PIN mgmt in parent
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+  const [pinBypassMode, setPinBypassMode] = useState(false);
+  const [pinBypassPassword, setPinBypassPassword] = useState('');
+  const [pinBypassError, setPinBypassError] = useState('');
+  const [changePinMode, setChangePinMode] = useState(false);
 
   // Rate limiting: track failed PIN/login attempts in memory
   const failedAttemptsRef = React.useRef({}); // { key: { count, lockedUntil } }
@@ -245,6 +251,8 @@ const FamilyChoreApp = () => {
       setFamilyName('');
       setEmail('');
       setPassword('');
+      // Send email verification
+      try { await sendEmailVerification(userCredential.user); } catch (_) {}
       setScreen('family-home');
     } catch (error) {
       setErrorMsg(error.message);
@@ -281,6 +289,46 @@ const FamilyChoreApp = () => {
       } else {
         setErrorMsg('Incorrect email or password.');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Forgot password
+  const sendPasswordReset = async () => {
+    setErrorMsg('');
+    if (!email) {
+      setErrorMsg('Please enter your email address first');
+      return;
+    }
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetEmailSent(true);
+    } catch (error) {
+      setErrorMsg('Could not send reset email. Check the address and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Bypass PIN using account password (for forgotten PIN)
+  const bypassPinWithPassword = async () => {
+    setPinBypassError('');
+    if (!pinBypassPassword) {
+      setPinBypassError('Please enter your account password');
+      return;
+    }
+    setLoading(true);
+    try {
+      const credential = EmailAuthProvider.credential(currentUser.email, pinBypassPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      // Password verified — go straight to PIN setup
+      setPinBypassMode(false);
+      setPinBypassPassword('');
+      setSettingPin(true);
+    } catch (error) {
+      setPinBypassError('Incorrect password. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -776,6 +824,38 @@ const FamilyChoreApp = () => {
               {loading ? 'Signing in...' : isLockedOut(`login_${email}`) ? `Locked (${isLockedOut(`login_${email}`)}s)` : <>Sign In <ArrowRight className="w-4 h-4" /></>}
             </button>
 
+            {!forgotPasswordMode ? (
+              <div className="text-center">
+                <button
+                  onClick={() => { setForgotPasswordMode(true); setErrorMsg(''); setResetEmailSent(false); }}
+                  className="text-sm text-indigo-500 hover:text-indigo-700 font-medium"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            ) : (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
+                <p className="text-sm text-indigo-800 font-medium">Enter your email above and we'll send a reset link.</p>
+                {resetEmailSent ? (
+                  <p className="text-green-700 text-sm font-bold text-center">✅ Reset email sent! Check your inbox.</p>
+                ) : (
+                  <button
+                    onClick={sendPasswordReset}
+                    disabled={loading}
+                    className="w-full bg-indigo-500 text-white py-2 rounded-lg font-bold hover:bg-indigo-600 transition disabled:opacity-50 text-sm"
+                  >
+                    {loading ? 'Sending...' : 'Send Reset Email'}
+                  </button>
+                )}
+                <button
+                  onClick={() => { setForgotPasswordMode(false); setResetEmailSent(false); setErrorMsg(''); }}
+                  className="w-full text-gray-500 text-sm font-medium hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
             <div className="border-t border-gray-200 pt-4 text-center">
               <p className="text-gray-600 text-sm mb-3">Don't have an account?</p>
               <button
@@ -1115,6 +1195,45 @@ const FamilyChoreApp = () => {
                 />
 
                 {errorMsg && <p className="text-red-600 text-sm text-center font-medium">{errorMsg}</p>}
+
+                {/* Forgot PIN — bypass via account password */}
+                {!pinBypassMode ? (
+                  <div className="text-center">
+                    <button
+                      onClick={() => { setPinBypassMode(true); setPinBypassError(''); setPinBypassPassword(''); }}
+                      className="text-sm text-indigo-500 hover:text-indigo-700 font-medium"
+                    >
+                      Forgot PIN?
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
+                    <p className="text-sm text-indigo-800 font-medium text-center">Enter your account password to reset your PIN</p>
+                    <input
+                      type="password"
+                      placeholder="Account password"
+                      value={pinBypassPassword}
+                      onChange={(e) => { setPinBypassPassword(e.target.value); setPinBypassError(''); }}
+                      onKeyPress={(e) => e.key === 'Enter' && bypassPinWithPassword()}
+                      className="w-full px-4 py-3 border-2 border-indigo-200 rounded-xl focus:border-indigo-500 focus:outline-none bg-white transition"
+                      autoFocus
+                    />
+                    {pinBypassError && <p className="text-red-600 text-sm text-center">{pinBypassError}</p>}
+                    <button
+                      onClick={bypassPinWithPassword}
+                      disabled={loading}
+                      className="w-full bg-indigo-500 text-white py-2 rounded-lg font-bold hover:bg-indigo-600 transition disabled:opacity-50 text-sm"
+                    >
+                      {loading ? 'Verifying...' : 'Verify & Reset PIN'}
+                    </button>
+                    <button
+                      onClick={() => { setPinBypassMode(false); setPinBypassPassword(''); setPinBypassError(''); }}
+                      className="w-full text-gray-500 text-sm font-medium hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </>
             )}
 
@@ -1147,6 +1266,19 @@ const FamilyChoreApp = () => {
               ← Back
             </button>
           </div>
+
+          {/* PIN upgrade warning banner */}
+          {familyData?.parentPin && !familyData?.pinHashed && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 mb-6 flex items-center justify-between gap-4">
+              <p className="text-amber-800 font-medium text-sm">⚠️ Your PIN needs a security upgrade.</p>
+              <button
+                onClick={() => { setSettingPin(true); setScreen('parentPin'); }}
+                className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-xl text-sm whitespace-nowrap transition"
+              >
+                Reset PIN
+              </button>
+            </div>
+          )}
 
           {/* Earnings Summary */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -1666,6 +1798,55 @@ const FamilyChoreApp = () => {
                 <TrendingUp className="w-5 h-5" />
                 Process Payout
               </button>
+            </div>
+
+            {/* Security — Change PIN */}
+            <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white/20">
+              <h2 className="text-2xl font-display font-bold text-gray-900 mb-2">Security</h2>
+              <p className="text-gray-600 font-light mb-6">Manage your parent PIN</p>
+              {!changePinMode ? (
+                <button
+                  onClick={() => setChangePinMode(true)}
+                  className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition"
+                >
+                  🔑 Change PIN
+                </button>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-gray-700 text-sm font-medium text-center">Enter a new PIN (4–6 digits)</p>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    placeholder="New PIN"
+                    value={parentPin}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      setParentPin(val);
+                      setErrorMsg('');
+                    }}
+                    maxLength="6"
+                    className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-3xl text-center font-bold tracking-widest focus:border-purple-500 focus:outline-none bg-white/50 transition"
+                    autoFocus
+                  />
+                  {errorMsg && <p className="text-red-600 text-sm text-center">{errorMsg}</p>}
+                  <button
+                    onClick={async () => {
+                      if (parentPin.length < 4) { setErrorMsg('PIN must be at least 4 digits'); return; }
+                      await saveParentPin();
+                      setChangePinMode(false);
+                    }}
+                    className="w-full bg-purple-500 text-white py-3 rounded-xl font-bold hover:bg-purple-600 transition"
+                  >
+                    Save New PIN
+                  </button>
+                  <button
+                    onClick={() => { setChangePinMode(false); setParentPin(''); setErrorMsg(''); }}
+                    className="w-full text-gray-500 font-bold hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
