@@ -107,6 +107,7 @@ const FamilyChoreApp = () => {
   const [pinFailCount, setPinFailCount] = useState(0);
   const [pinLockedUntil, setPinLockedUntil] = useState(null);
   const [lockCountdown, setLockCountdown] = useState(0); // child object to show payslip for
+  const signingUpRef = React.useRef(false); // prevents onAuthStateChanged racing with signUp
   const [pendingChildId, setPendingChildId] = useState(null); // child selected, awaiting PIN
   const [childPinAttempt, setChildPinAttempt] = useState('');
   const [childPinError, setChildPinError] = useState('');
@@ -164,6 +165,7 @@ const FamilyChoreApp = () => {
   // Listen to auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (signingUpRef.current) return; // signup handles its own navigation
       if (user) {
         setCurrentUser(user);
         // Security: look up the user's familyId directly via their uid index
@@ -226,6 +228,7 @@ const FamilyChoreApp = () => {
     }
 
     setLoading(true);
+    signingUpRef.current = true;
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const uid = userCredential.user.uid;
@@ -234,7 +237,7 @@ const FamilyChoreApp = () => {
       const familyRef = ref(database, `families/${newFamilyId}`);
       // Write uid→familyId index for secure, direct lookup on future logins
       await set(ref(database, `userFamilies/${uid}`), newFamilyId);
-      await set(familyRef, {
+      const newFamilyData = {
         name: familyName,
         parentId: uid,
         members: {
@@ -245,18 +248,33 @@ const FamilyChoreApp = () => {
         childTasks: {},
         parentPin: '',
         createdAt: new Date().toISOString()
-      });
-      
+      };
+      await set(familyRef, newFamilyData);
+
+      // Set all state before navigating so family-home renders correctly
+      setCurrentUser(userCredential.user);
       setFamilyId(newFamilyId);
+      setFamilyData(newFamilyData);
       setFamilyName('');
       setEmail('');
       setPassword('');
       // Send email verification
       try { await sendEmailVerification(userCredential.user); } catch (_) {}
+
+      // Set up live listener for future updates
+      onValue(familyRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.val();
+          setFamilyData(data);
+          generateWeeklyTasks(newFamilyId, data);
+        }
+      });
+
       setScreen('family-home');
     } catch (error) {
       setErrorMsg(error.message);
     } finally {
+      signingUpRef.current = false;
       setLoading(false);
     }
   };
