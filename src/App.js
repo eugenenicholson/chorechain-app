@@ -25,6 +25,7 @@ const auth = getAuth(app);
 const database = getDatabase(app);
 
 const APP_VERSION = '1.0.0';
+const ADMIN_UID = 'gTcRGsA5RVTd7uhXtosq7cOCyAh2'; // eugenenicholson@gmail.com
 
 // SHA-256 hash utility using Web Crypto API (no external dependency)
 const hashPin = async (pin) => {
@@ -127,6 +128,9 @@ const FamilyChoreApp = () => {
   const [joinFamilyCode, setJoinFamilyCode] = useState('');
   const [childPayslip, setChildPayslip] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [adminData, setAdminData] = useState(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [deletingFamily, setDeletingFamily] = useState(null);
 
   // Rate limiting: track failed PIN/login attempts in memory
   const failedAttemptsRef = React.useRef({}); // { key: { count, lockedUntil } }
@@ -436,6 +440,51 @@ const FamilyChoreApp = () => {
       setErrorMsg('Could not join family. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Admin — load all families
+  const loadAdminData = async () => {
+    setAdminLoading(true);
+    try {
+      const [familiesSnap, userFamiliesSnap] = await Promise.all([
+        get(ref(database, 'families')),
+        get(ref(database, 'userFamilies'))
+      ]);
+      const families = familiesSnap.exists() ? familiesSnap.val() : {};
+      const userFamilies = userFamiliesSnap.exists() ? userFamiliesSnap.val() : {};
+      // Build reverse map: familyId -> [uids]
+      const familyToUids = {};
+      Object.entries(userFamilies).forEach(([uid, fid]) => {
+        if (!familyToUids[fid]) familyToUids[fid] = [];
+        familyToUids[fid].push(uid);
+      });
+      const result = Object.entries(families).map(([fid, data]) => ({
+        familyId: fid,
+        name: data.name || '(unnamed)',
+        createdAt: data.createdAt || null,
+        memberCount: data.members ? Object.keys(data.members).length : 0,
+        childCount: data.children ? Object.keys(data.children).length : 0,
+        members: data.members || {},
+        uids: familyToUids[fid] || [],
+      }));
+      setAdminData(result);
+    } catch (e) {
+      console.error('Admin load error', e);
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  // Admin — delete a family and all its userFamilies entries
+  const adminDeleteFamily = async (familyId, uids) => {
+    try {
+      await remove(ref(database, `families/${familyId}`));
+      await Promise.all(uids.map(uid => remove(ref(database, `userFamilies/${uid}`))));
+      setAdminData(prev => prev.filter(f => f.familyId !== familyId));
+      setDeletingFamily(null);
+    } catch (e) {
+      console.error('Admin delete error', e);
     }
   };
 
@@ -1177,6 +1226,14 @@ const FamilyChoreApp = () => {
               <LogOut className="w-4 h-4" />
               Logout
             </button>
+            {currentUser?.uid === ADMIN_UID && (
+              <button
+                onClick={() => setScreen('admin')}
+                className="w-full text-gray-400 hover:text-gray-600 py-2 text-xs font-medium flex items-center justify-center gap-1 mt-1"
+              >
+                ⚙️ Admin
+              </button>
+            )}
             <p className="text-gray-400 text-xs text-center mt-4">v{APP_VERSION}</p>
           </div>
         </div>
@@ -2335,6 +2392,91 @@ const FamilyChoreApp = () => {
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ADMIN SCREEN — only visible to admin UID
+  if (screen === 'admin' && currentUser?.uid === ADMIN_UID) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 p-4">
+        <div className="max-w-2xl mx-auto pt-8">
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-3xl font-display font-bold text-white">⚙️ Admin Panel</h1>
+              <p className="text-gray-400 text-sm">ChoreChain v{APP_VERSION}</p>
+            </div>
+            <button
+              onClick={() => { setScreen('family-home'); setAdminData(null); }}
+              className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition font-bold"
+            >
+              ← Back
+            </button>
+          </div>
+
+          {!adminData ? (
+            <div className="text-center py-16">
+              <button
+                onClick={loadAdminData}
+                disabled={adminLoading}
+                className="bg-purple-500 text-white px-8 py-4 rounded-2xl font-bold text-lg hover:bg-purple-600 transition disabled:opacity-50"
+              >
+                {adminLoading ? 'Loading...' : 'Load All Families'}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-gray-400 text-sm">{adminData.length} families in database</p>
+              {adminData.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1)).map(family => {
+                const isOwn = family.familyId === familyId;
+                const emails = Object.values(family.members).map(m => m.email).join(', ');
+                return (
+                  <div key={family.familyId} className={`rounded-2xl p-5 border ${isOwn ? 'bg-purple-900/40 border-purple-500' : 'bg-gray-800 border-gray-700'}`}>
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-white font-bold text-lg">{family.name}</p>
+                          {isOwn && <span className="text-xs bg-purple-500 text-white px-2 py-0.5 rounded font-bold">You</span>}
+                        </div>
+                        <p className="text-gray-400 text-xs font-mono mb-1">{family.familyId}</p>
+                        <p className="text-gray-300 text-sm truncate">{emails}</p>
+                        <p className="text-gray-500 text-xs mt-1">
+                          {family.memberCount} parent{family.memberCount !== 1 ? 's' : ''} · {family.childCount} child{family.childCount !== 1 ? 'ren' : ''} · {family.createdAt ? new Date(family.createdAt).toLocaleDateString('en-NZ') : 'unknown date'}
+                        </p>
+                      </div>
+                      {!isOwn && (
+                        deletingFamily === family.familyId ? (
+                          <div className="flex flex-col gap-2 flex-shrink-0">
+                            <p className="text-red-400 text-xs text-center font-bold">Confirm delete?</p>
+                            <button
+                              onClick={() => adminDeleteFamily(family.familyId, family.uids)}
+                              className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-600 transition text-sm"
+                            >
+                              Yes, Delete
+                            </button>
+                            <button
+                              onClick={() => setDeletingFamily(null)}
+                              className="bg-gray-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-gray-500 transition text-sm"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeletingFamily(family.familyId)}
+                            className="bg-red-900/50 border border-red-700 text-red-400 px-4 py-2 rounded-lg font-bold hover:bg-red-800/50 transition text-sm flex-shrink-0"
+                          >
+                            🗑 Delete
+                          </button>
+                        )
+                      )}
                     </div>
                   </div>
                 );
