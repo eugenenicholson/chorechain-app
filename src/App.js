@@ -1029,7 +1029,7 @@ const FamilyChoreApp = () => {
                 />
                 <input
                   type="text"
-                  placeholder="Family code (e.g. IYH8YC7V)"
+                  placeholder="Family code (e.g. XXXXXXXX)"
                   value={joinFamilyCode}
                   onChange={(e) => setJoinFamilyCode(e.target.value.toUpperCase())}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition font-mono tracking-widest"
@@ -1131,7 +1131,6 @@ const FamilyChoreApp = () => {
               <DollarSign className="w-12 h-12 text-white" />
             </div>
             <h1 className="text-4xl font-display font-bold text-gray-900 mb-2">{familyData.name}</h1>
-            <p className="text-gray-500 text-xs mt-1">Family code: <span className="font-mono font-bold text-purple-600 tracking-widest">{familyId}</span> · share to add a second parent</p>
           </div>
 
           <div className="space-y-4">
@@ -2004,7 +2003,14 @@ const FamilyChoreApp = () => {
             {/* Security — Change PIN */}
             <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white/20">
               <h2 className="text-2xl font-display font-bold text-gray-900 mb-2">Security</h2>
-              <p className="text-gray-600 font-light mb-6">Manage your parent PIN</p>
+              <p className="text-gray-600 font-light mb-4">Manage your parent PIN</p>
+
+              {/* Family code — shown only to parent behind PIN */}
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-6">
+                <p className="text-sm text-indigo-700 font-bold mb-1">Family Code</p>
+                <p className="font-mono text-2xl font-bold text-indigo-600 tracking-widest">{familyId}</p>
+                <p className="text-xs text-indigo-500 mt-1">Share this code with a second parent so they can join your family. Keep it private.</p>
+              </div>
               {!changePinMode ? (
                 <button
                   onClick={() => setChangePinMode(true)}
