@@ -176,6 +176,20 @@ const FamilyChoreApp = () => {
     rotateChildren: []
   });
 
+  // Detect invite deep link — e.g. /join/IYH8YC7V
+  useEffect(() => {
+    const path = window.location.pathname;
+    const match = path.match(/^\/join\/([A-Z0-9]{8})$/i);
+    if (match) {
+      const code = match[1].toUpperCase();
+      setJoinFamilyCode(code);
+      setJoinFamilyMode(true);
+      setScreen('signup');
+      // Clean the URL so refreshing doesn't re-trigger
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
+
   // Listen to auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -2073,8 +2087,22 @@ const FamilyChoreApp = () => {
               {/* Family code — shown only to parent behind PIN */}
               <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-6">
                 <p className="text-sm text-indigo-700 font-bold mb-1">Family Code</p>
-                <p className="font-mono text-2xl font-bold text-indigo-600 tracking-widest">{familyId}</p>
-                <p className="text-xs text-indigo-500 mt-1">Share this code with a second parent so they can join your family. Keep it private.</p>
+                <p className="font-mono text-2xl font-bold text-indigo-600 tracking-widest mb-2">{familyId}</p>
+                <p className="text-xs text-indigo-500 mb-3">Share this code with a second parent so they can join your family. Keep it private.</p>
+                <button
+                  onClick={() => {
+                    const link = `${window.location.origin}/join/${familyId}`;
+                    if (navigator.share) {
+                      navigator.share({ title: 'Join our family on ChoreChain', text: 'Use this link to join our ChoreChain family:', url: link });
+                    } else {
+                      navigator.clipboard.writeText(link);
+                      alert('Invite link copied to clipboard!');
+                    }
+                  }}
+                  className="w-full bg-indigo-500 text-white py-2 rounded-xl font-bold hover:bg-indigo-600 transition text-sm"
+                >
+                  🔗 Share Invite Link
+                </button>
               </div>
               {!changePinMode ? (
                 <button
