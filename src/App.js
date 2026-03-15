@@ -177,15 +177,16 @@ const FamilyChoreApp = () => {
   });
 
   // Detect invite deep link — e.g. /join/IYH8YC7V
+  // Store in a ref so it survives onAuthStateChanged overwriting screen state
+  const inviteCodeRef = React.useRef(null);
   useEffect(() => {
     const path = window.location.pathname;
     const match = path.match(/^\/join\/([A-Z0-9]{8})$/i);
     if (match) {
       const code = match[1].toUpperCase();
+      inviteCodeRef.current = code;
       setJoinFamilyCode(code);
-      setJoinFamilyMode(true);
-      setScreen('signup');
-      // Clean the URL so refreshing doesn't re-trigger
+      // Clean the URL immediately
       window.history.replaceState({}, '', '/');
     }
   }, []);
@@ -196,6 +197,14 @@ const FamilyChoreApp = () => {
       if (signingUpRef.current) return; // signup handles its own navigation
       if (user) {
         setCurrentUser(user);
+        // If there's a pending invite link, go to join screen instead of family-home
+        if (inviteCodeRef.current) {
+          setJoinFamilyCode(inviteCodeRef.current);
+          setJoinFamilyMode(true);
+          inviteCodeRef.current = null;
+          setScreen('signup');
+          return;
+        }
         // Security: look up the user's familyId directly via their uid index
         // rather than scanning all families (prevents reading other families' data)
         const userFamilyRef = ref(database, `userFamilies/${user.uid}`);
@@ -237,7 +246,15 @@ const FamilyChoreApp = () => {
         setCurrentUser(null);
         setFamilyId(null);
         setFamilyData(null);
-        setScreen('login');
+        // If there's a pending invite, go to signup/join screen
+        if (inviteCodeRef.current) {
+          setJoinFamilyCode(inviteCodeRef.current);
+          setJoinFamilyMode(true);
+          inviteCodeRef.current = null;
+          setScreen('signup');
+        } else {
+          setScreen('login');
+        }
       }
     });
     return unsubscribe;
