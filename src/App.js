@@ -131,6 +131,7 @@ const FamilyChoreApp = () => {
   const [adminData, setAdminData] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [deletingFamily, setDeletingFamily] = useState(null);
+  const [expandedFamily, setExpandedFamily] = useState(null);
 
   // Rate limiting: track failed PIN/login attempts in memory
   const failedAttemptsRef = React.useRef({}); // { key: { count, lockedUntil } }
@@ -453,7 +454,6 @@ const FamilyChoreApp = () => {
       ]);
       const families = familiesSnap.exists() ? familiesSnap.val() : {};
       const userFamilies = userFamiliesSnap.exists() ? userFamiliesSnap.val() : {};
-      // Build reverse map: familyId -> [uids]
       const familyToUids = {};
       Object.entries(userFamilies).forEach(([uid, fid]) => {
         if (!familyToUids[fid]) familyToUids[fid] = [];
@@ -466,6 +466,14 @@ const FamilyChoreApp = () => {
         memberCount: data.members ? Object.keys(data.members).length : 0,
         childCount: data.children ? Object.keys(data.children).length : 0,
         members: data.members || {},
+        children: data.children || {},
+        taskTemplates: data.taskTemplates || {},
+        childTasks: data.childTasks || {},
+        rewardMode: data.rewardMode || 'dollars',
+        pointsPerDollar: data.pointsPerDollar || 100,
+        payday: data.payday != null ? data.payday : 5,
+        parentPin: data.parentPin ? '••••' : 'Not set',
+        pinHashed: data.pinHashed || false,
         uids: familyToUids[fid] || [],
       }));
       setAdminData(result);
@@ -2436,48 +2444,132 @@ const FamilyChoreApp = () => {
               <p className="text-gray-400 text-sm">{adminData.length} families in database</p>
               {adminData.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1)).map(family => {
                 const isOwn = family.familyId === familyId;
+                const isExpanded = expandedFamily === family.familyId;
                 const emails = Object.values(family.members).map(m => m.email).join(', ');
+                const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const taskTemplates = Object.values(family.taskTemplates);
+                const childTasks = Object.values(family.childTasks);
+                const children = Object.values(family.children);
                 return (
-                  <div key={family.familyId} className={`rounded-2xl p-5 border ${isOwn ? 'bg-purple-900/40 border-purple-500' : 'bg-gray-800 border-gray-700'}`}>
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="flex-1 min-w-0">
+                  <div key={family.familyId} className={`rounded-2xl border ${isOwn ? 'bg-purple-900/40 border-purple-500' : 'bg-gray-800 border-gray-700'}`}>
+                    {/* Header row */}
+                    <div className="flex justify-between items-start gap-4 p-5">
+                      <button className="flex-1 min-w-0 text-left" onClick={() => setExpandedFamily(isExpanded ? null : family.familyId)}>
                         <div className="flex items-center gap-2 mb-1">
                           <p className="text-white font-bold text-lg">{family.name}</p>
                           {isOwn && <span className="text-xs bg-purple-500 text-white px-2 py-0.5 rounded font-bold">You</span>}
+                          <span className="text-gray-500 text-xs ml-auto">{isExpanded ? '▲' : '▼'}</span>
                         </div>
                         <p className="text-gray-400 text-xs font-mono mb-1">{family.familyId}</p>
                         <p className="text-gray-300 text-sm truncate">{emails}</p>
                         <p className="text-gray-500 text-xs mt-1">
                           {family.memberCount} parent{family.memberCount !== 1 ? 's' : ''} · {family.childCount} child{family.childCount !== 1 ? 'ren' : ''} · {family.createdAt ? new Date(family.createdAt).toLocaleDateString('en-NZ') : 'unknown date'}
                         </p>
-                      </div>
+                      </button>
                       {!isOwn && (
                         deletingFamily === family.familyId ? (
                           <div className="flex flex-col gap-2 flex-shrink-0">
-                            <p className="text-red-400 text-xs text-center font-bold">Confirm delete?</p>
-                            <button
-                              onClick={() => adminDeleteFamily(family.familyId, family.uids)}
-                              className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-600 transition text-sm"
-                            >
-                              Yes, Delete
-                            </button>
-                            <button
-                              onClick={() => setDeletingFamily(null)}
-                              className="bg-gray-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-gray-500 transition text-sm"
-                            >
-                              Cancel
-                            </button>
+                            <p className="text-red-400 text-xs text-center font-bold">Confirm?</p>
+                            <button onClick={() => adminDeleteFamily(family.familyId, family.uids)} className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-600 transition text-sm">Yes</button>
+                            <button onClick={() => setDeletingFamily(null)} className="bg-gray-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-gray-500 transition text-sm">No</button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => setDeletingFamily(family.familyId)}
-                            className="bg-red-900/50 border border-red-700 text-red-400 px-4 py-2 rounded-lg font-bold hover:bg-red-800/50 transition text-sm flex-shrink-0"
-                          >
-                            🗑 Delete
+                          <button onClick={() => setDeletingFamily(family.familyId)} className="bg-red-900/50 border border-red-700 text-red-400 px-4 py-2 rounded-lg font-bold hover:bg-red-800/50 transition text-sm flex-shrink-0">
+                            🗑
                           </button>
                         )
                       )}
                     </div>
+
+                    {/* Expanded detail */}
+                    {isExpanded && (
+                      <div className="border-t border-gray-700 px-5 pb-5 pt-4 space-y-5">
+
+                        {/* Settings */}
+                        <div>
+                          <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Settings</p>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-gray-700/50 rounded-xl p-3 text-center">
+                              <p className="text-gray-400 text-xs mb-1">Reward</p>
+                              <p className="text-white font-bold text-sm capitalize">{family.rewardMode}</p>
+                            </div>
+                            <div className="bg-gray-700/50 rounded-xl p-3 text-center">
+                              <p className="text-gray-400 text-xs mb-1">Payday</p>
+                              <p className="text-white font-bold text-sm">{dayNames[family.payday]}</p>
+                            </div>
+                            <div className="bg-gray-700/50 rounded-xl p-3 text-center">
+                              <p className="text-gray-400 text-xs mb-1">Parent PIN</p>
+                              <p className="text-white font-bold text-sm">{family.parentPin} {family.pinHashed ? '🔒' : '⚠️'}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Children */}
+                        {children.length > 0 && (
+                          <div>
+                            <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Children</p>
+                            <div className="space-y-1">
+                              {children.map(child => (
+                                <div key={child.id} className="flex justify-between items-center bg-gray-700/50 rounded-lg px-3 py-2">
+                                  <p className="text-white font-medium">{child.name}</p>
+                                  <p className="text-gray-400 text-xs">{child.pin ? (child.pinHashed ? '🔒 PIN set' : '⚠️ unhashed PIN') : 'No PIN'}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Task templates */}
+                        {taskTemplates.length > 0 && (
+                          <div>
+                            <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Task Templates ({taskTemplates.length})</p>
+                            <div className="space-y-1">
+                              {taskTemplates.map(t => (
+                                <div key={t.id} className="flex justify-between items-center bg-gray-700/50 rounded-lg px-3 py-2">
+                                  <p className="text-white text-sm font-medium">{t.title}</p>
+                                  <p className="text-gray-400 text-xs">${parseFloat(t.amount||0).toFixed(2)} · {t.frequency} · {t.assignType}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* This week's tasks summary */}
+                        {childTasks.length > 0 && (
+                          <div>
+                            <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">This Week ({childTasks.length} tasks)</p>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="bg-gray-700/50 rounded-xl p-3 text-center">
+                                <p className="text-gray-400 text-xs mb-1">Total</p>
+                                <p className="text-white font-bold">{childTasks.length}</p>
+                              </div>
+                              <div className="bg-gray-700/50 rounded-xl p-3 text-center">
+                                <p className="text-gray-400 text-xs mb-1">Completed</p>
+                                <p className="text-green-400 font-bold">{childTasks.filter(t => t.completed?.length > 0).length}</p>
+                              </div>
+                              <div className="bg-gray-700/50 rounded-xl p-3 text-center">
+                                <p className="text-gray-400 text-xs mb-1">Pending</p>
+                                <p className="text-yellow-400 font-bold">{childTasks.filter(t => !t.completed?.length).length}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Members detail */}
+                        <div>
+                          <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Parent Accounts</p>
+                          <div className="space-y-1">
+                            {Object.entries(family.members).map(([uid, m]) => (
+                              <div key={uid} className="bg-gray-700/50 rounded-lg px-3 py-2">
+                                <p className="text-white text-sm font-medium">{m.email}</p>
+                                <p className="text-gray-500 text-xs font-mono">{uid}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                      </div>
+                    )}
                   </div>
                 );
               })}
