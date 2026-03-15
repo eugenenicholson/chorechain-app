@@ -4,7 +4,7 @@ import { Plus, DollarSign, Star, Edit2, Trash2, Calendar, LogOut, CheckCircle2, 
 
 // Firebase imports
 import { initializeApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, deleteUser, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
 import { getDatabase, ref, set, get, remove, onValue } from 'firebase/database';
 
 // Firebase configuration — values loaded from .env (never hardcode secrets in source)
@@ -23,6 +23,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const database = getDatabase(app);
+
+const APP_VERSION = '1.0.0';
 
 // SHA-256 hash utility using Web Crypto API (no external dependency)
 const hashPin = async (pin) => {
@@ -121,6 +123,10 @@ const FamilyChoreApp = () => {
   const [deleteAccountMode, setDeleteAccountMode] = useState(false);
   const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
   const [deleteAccountError, setDeleteAccountError] = useState('');
+  const [joinFamilyMode, setJoinFamilyMode] = useState(false);
+  const [joinFamilyCode, setJoinFamilyCode] = useState('');
+  const [childPayslip, setChildPayslip] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
   // Rate limiting: track failed PIN/login attempts in memory
   const failedAttemptsRef = React.useRef({}); // { key: { count, lockedUntil } }
@@ -298,6 +304,7 @@ const FamilyChoreApp = () => {
 
     setLoading(true);
     try {
+      await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email, password);
       clearAttempts(lockKey);
       setEmail('');
@@ -384,6 +391,49 @@ const FamilyChoreApp = () => {
       } else {
         setDeleteAccountError('Could not delete account. Please try again.');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Join an existing family using family code
+  const joinFamily = async (overrideUid, overrideEmail) => {
+    setErrorMsg('');
+    const code = joinFamilyCode.trim().toUpperCase();
+    if (!code) { setErrorMsg('Please enter a family code'); return; }
+    setLoading(true);
+    try {
+      const familyRef = ref(database, `families/${code}`);
+      const snap = await get(familyRef);
+      if (!snap.exists()) {
+        setErrorMsg('Family code not found. Check and try again.');
+        setLoading(false);
+        return;
+      }
+      const uid = overrideUid || currentUser.uid;
+      const email = overrideEmail || currentUser.email;
+      // Add this user as a member of the family
+      await set(ref(database, `families/${code}/members/${uid}`), {
+        email: email,
+        role: 'parent',
+        name: email.split('@')[0]
+      });
+      // Update their userFamilies index to point to new family
+      await set(ref(database, `userFamilies/${uid}`), code);
+      setFamilyId(code);
+      setJoinFamilyMode(false);
+      setJoinFamilyCode('');
+      // Listen to the new family
+      onValue(familyRef, (s) => {
+        if (s.exists()) {
+          const data = s.val();
+          setFamilyData(data);
+          generateWeeklyTasks(code, data);
+        }
+      });
+      setScreen('family-home');
+    } catch (error) {
+      setErrorMsg('Could not join family. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -845,6 +895,7 @@ const FamilyChoreApp = () => {
             </div>
             <h1 className="text-5xl font-display font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 bg-clip-text text-transparent mb-2">ChoreChain</h1>
             <p className="text-gray-600 font-light text-lg">Family tasks made fair</p>
+            <p className="text-gray-400 text-xs mt-1">v{APP_VERSION}</p>
           </div>
 
           <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 space-y-6 border border-white/20">
@@ -868,6 +919,16 @@ const FamilyChoreApp = () => {
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
               disabled={loading}
             />
+
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 accent-purple-500"
+              />
+              <span className="text-sm text-gray-600">Remember me</span>
+            </label>
 
             {errorMsg && <p className="text-red-600 text-sm font-medium">{errorMsg}</p>}
 
@@ -911,18 +972,19 @@ const FamilyChoreApp = () => {
               </div>
             )}
 
-            <div className="border-t border-gray-200 pt-4 text-center">
-              <p className="text-gray-600 text-sm mb-3">Don't have an account?</p>
+            <div className="border-t border-gray-200 pt-4 text-center space-y-3">
+              <p className="text-gray-600 text-sm">Don't have an account?</p>
               <button
-                onClick={() => {
-                  setScreen('signup');
-                  setEmail('');
-                  setPassword('');
-                  setErrorMsg('');
-                }}
-                className="text-purple-600 font-bold hover:text-purple-700 text-sm"
+                onClick={() => { setScreen('signup'); setEmail(''); setPassword(''); setErrorMsg(''); }}
+                className="text-purple-600 font-bold hover:text-purple-700 text-sm block w-full"
               >
                 Create a Family Account
+              </button>
+              <button
+                onClick={() => { setScreen('signup'); setJoinFamilyMode(true); setEmail(''); setPassword(''); setErrorMsg(''); }}
+                className="text-indigo-500 font-bold hover:text-indigo-700 text-sm block w-full"
+              >
+                Join an Existing Family
               </button>
             </div>
           </div>
@@ -937,55 +999,122 @@ const FamilyChoreApp = () => {
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
         <div className="max-w-md mx-auto pt-20">
           <button 
-            onClick={() => setScreen('login')} 
+            onClick={() => { setScreen('login'); setJoinFamilyMode(false); setJoinFamilyCode(''); setErrorMsg(''); }} 
             className="text-purple-600 font-bold mb-6 flex items-center gap-1"
           >
             ← Back
           </button>
 
           <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 space-y-6 border border-white/20">
-            <h2 className="text-2xl font-display font-bold text-gray-900">Create Family Account</h2>
+            <h2 className="text-2xl font-display font-bold text-gray-900">{joinFamilyMode ? 'Join a Family' : 'Create Family Account'}</h2>
 
-            <input
-              type="text"
-              placeholder="Family name (e.g., Smith Family)"
-              value={familyName}
-              onChange={(e) => setFamilyName(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-              disabled={loading}
-            />
-
-            <input
-              type="email"
-              placeholder="Your email (parent)"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-              disabled={loading}
-            />
-
-            <input
-              type="password"
-              placeholder="Password (min 6 characters)"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-              disabled={loading}
-            />
-
-            {errorMsg && <p className="text-red-600 text-sm font-medium">{errorMsg}</p>}
-
-            <button
-              onClick={signUp}
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {loading ? 'Creating...' : <>Create Account <ArrowRight className="w-4 h-4" /></>}
-            </button>
-
-            <p className="text-gray-600 text-sm text-center">
-              Your family gets a unique ID to share with others.
-            </p>
+            {joinFamilyMode ? (
+              <>
+                <p className="text-gray-600 text-sm">Ask the family admin for their 8-character family code.</p>
+                <input
+                  type="email"
+                  placeholder="Your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
+                  disabled={loading}
+                />
+                <input
+                  type="password"
+                  placeholder="Password (min 6 characters)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
+                  disabled={loading}
+                />
+                <input
+                  type="text"
+                  placeholder="Family code (e.g. IYH8YC7V)"
+                  value={joinFamilyCode}
+                  onChange={(e) => setJoinFamilyCode(e.target.value.toUpperCase())}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition font-mono tracking-widest"
+                  maxLength={8}
+                  disabled={loading}
+                />
+                {errorMsg && <p className="text-red-600 text-sm font-medium">{errorMsg}</p>}
+                <button
+                  onClick={async () => {
+                    setErrorMsg('');
+                    if (!email || !password || !joinFamilyCode) { setErrorMsg('Please fill in all fields'); return; }
+                    if (password.length < 6) { setErrorMsg('Password must be at least 6 characters'); return; }
+                    setLoading(true);
+                    signingUpRef.current = true;
+                    try {
+                      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                      setCurrentUser(userCredential.user);
+                      try { await sendEmailVerification(userCredential.user); } catch (_) {}
+                      await joinFamily(userCredential.user.uid, userCredential.user.email);
+                    } catch (error) {
+                      if (error.code === 'auth/email-already-in-use') {
+                        // Already has account — just sign in and join
+                        try {
+                          const cred = await signInWithEmailAndPassword(auth, email, password);
+                          await joinFamily(cred.user.uid, cred.user.email);
+                        } catch (e) { setErrorMsg(e.message); }
+                      } else {
+                        setErrorMsg(error.message);
+                      }
+                    } finally {
+                      signingUpRef.current = false;
+                      setLoading(false);
+                    }
+                  }}
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loading ? 'Joining...' : <>Join Family <ArrowRight className="w-4 h-4" /></>}
+                </button>
+                <button onClick={() => setJoinFamilyMode(false)} className="w-full text-gray-500 text-sm font-medium hover:text-gray-700 text-center">
+                  Create a new family instead
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  placeholder="Family name (e.g., Smith Family)"
+                  value={familyName}
+                  onChange={(e) => setFamilyName(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
+                  disabled={loading}
+                />
+                <input
+                  type="email"
+                  placeholder="Your email (parent)"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
+                  disabled={loading}
+                />
+                <input
+                  type="password"
+                  placeholder="Password (min 6 characters)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
+                  disabled={loading}
+                />
+                {errorMsg && <p className="text-red-600 text-sm font-medium">{errorMsg}</p>}
+                <button
+                  onClick={signUp}
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loading ? 'Creating...' : <>Create Account <ArrowRight className="w-4 h-4" /></>}
+                </button>
+                <p className="text-gray-600 text-sm text-center">
+                  Your family gets a unique code to share with a second parent.
+                </p>
+                <button onClick={() => setJoinFamilyMode(true)} className="w-full text-indigo-500 text-sm font-medium hover:text-indigo-700 text-center">
+                  Join an existing family instead
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1002,7 +1131,7 @@ const FamilyChoreApp = () => {
               <DollarSign className="w-12 h-12 text-white" />
             </div>
             <h1 className="text-4xl font-display font-bold text-gray-900 mb-2">{familyData.name}</h1>
-            <p className="text-gray-600 font-light">ID: <span className="font-bold text-purple-600">{familyId}</span></p>
+            <p className="text-gray-500 text-xs mt-1">Family code: <span className="font-mono font-bold text-purple-600 tracking-widest">{familyId}</span> · share to add a second parent</p>
           </div>
 
           <div className="space-y-4">
@@ -1049,6 +1178,7 @@ const FamilyChoreApp = () => {
               <LogOut className="w-4 h-4" />
               Logout
             </button>
+            <p className="text-gray-400 text-xs text-center mt-4">v{APP_VERSION}</p>
           </div>
         </div>
       </div>
@@ -1293,7 +1423,7 @@ const FamilyChoreApp = () => {
             )}
 
             <button
-              onClick={() => setScreen('family-home')}
+              onClick={() => { setScreen('family-home'); setPinBypassMode(false); setPinBypassPassword(''); setPinBypassError(''); }}
               className="w-full text-purple-600 font-bold hover:text-purple-700"
             >
               ← Back
@@ -1392,6 +1522,10 @@ const FamilyChoreApp = () => {
             return (
               <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPayslipChild(null)}>
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  {/* Sticky back button for PWA */}
+                  <div className="sticky top-0 z-10 flex justify-between items-center px-6 pt-4 pb-2 bg-white rounded-t-3xl">
+                    <button onClick={() => setPayslipChild(null)} className="text-purple-600 font-bold flex items-center gap-1">← Back</button>
+                  </div>
                   {/* Header */}
                   <div className="bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 rounded-t-3xl p-6 text-white">
                     <div className="flex justify-between items-start">
@@ -1549,14 +1683,26 @@ const FamilyChoreApp = () => {
                 onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, title: e.target.value}) : setNewTemplate({...newTemplate, title: e.target.value})}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50"
               />
-              <input
-                type="number"
-                placeholder={isPoints() ? `Points per chore (e.g. ${pointsPerDollar()})` : "Amount ($)"}
-                step={isPoints() ? "10" : "0.50"}
-                value={editingTemplate ? editingTemplate.amount : newTemplate.amount}
-                onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, amount: e.target.value}) : setNewTemplate({...newTemplate, amount: e.target.value})}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50"
-              />
+              <div>
+                <label className="block text-gray-700 font-bold mb-1">
+                  Amount <span className="text-green-600">(always entered in dollars $)</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">$</span>
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    step="0.50"
+                    min="0"
+                    value={editingTemplate ? editingTemplate.amount : newTemplate.amount}
+                    onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, amount: e.target.value}) : setNewTemplate({...newTemplate, amount: e.target.value})}
+                    className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50"
+                  />
+                </div>
+                {isPoints() && (
+                  <p className="text-xs text-indigo-500 mt-1">= {Math.round(parseFloat((editingTemplate ? editingTemplate.amount : newTemplate.amount) || 0) * pointsPerDollar())} pts at current rate ({pointsPerDollar()} pts/$1)</p>
+                )}
+              </div>
 
               <div>
                 <p className="text-gray-700 font-bold mb-2">Frequency:</p>
@@ -1887,8 +2033,16 @@ const FamilyChoreApp = () => {
                   <button
                     onClick={async () => {
                       if (parentPin.length < 4) { setErrorMsg('PIN must be at least 4 digits'); return; }
-                      await saveParentPin();
-                      setChangePinMode(false);
+                      try {
+                        const hashed = await hashPin(parentPin);
+                        await set(ref(database, `families/${familyId}/parentPin`), hashed);
+                        await set(ref(database, `families/${familyId}/pinHashed`), true);
+                        setParentPin('');
+                        setChangePinMode(false);
+                        setErrorMsg('');
+                      } catch (error) {
+                        setErrorMsg('Could not save PIN. Please try again.');
+                      }
                     }}
                     className="w-full bg-purple-500 text-white py-3 rounded-xl font-bold hover:bg-purple-600 transition"
                   >
@@ -1988,7 +2142,7 @@ const FamilyChoreApp = () => {
               <p className="text-gray-600 font-light">{familyData.name}</p>
             </div>
             <button
-              onClick={() => setScreen('family-home')}
+              onClick={() => { setScreen('family-home'); setChildPayslip(false); }}
               className="flex items-center gap-2 bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition font-bold"
             >
               ← Back
@@ -2021,6 +2175,58 @@ const FamilyChoreApp = () => {
                     ></div>
                   </div>
                   <p className="text-sm font-light opacity-90">{pct === 100 ? '🎉 All done!' : `${Math.round(pct)}% of potential earned`}</p>
+                </div>
+                <button
+                  onClick={() => setChildPayslip(true)}
+                  className="mt-4 w-full bg-white/20 hover:bg-white/30 text-white font-bold py-2 rounded-xl transition text-sm"
+                >
+                  📄 View My Payslip
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Child Payslip Modal */}
+          {childPayslip && (() => {
+            const completedTasks = familyData.childTasks
+              ? Object.values(familyData.childTasks).filter(t => t.completed?.includes(currentChildId))
+              : [];
+            const total = completedTasks.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
+            return (
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+                  <div className="sticky top-0 z-10 flex justify-between items-center px-6 pt-4 pb-2 bg-white rounded-t-3xl">
+                    <button onClick={() => setChildPayslip(false)} className="text-purple-600 font-bold flex items-center gap-1">← Back</button>
+                  </div>
+                  <div className="bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 mx-4 rounded-2xl p-6 text-white mb-4">
+                    <p className="text-sm opacity-80 mb-1">My Weekly Payslip</p>
+                    <h2 className="text-2xl font-bold">{childData?.name}</h2>
+                    <div className="mt-3 bg-white/20 rounded-xl p-3">
+                      <p className="text-sm opacity-80">Total Earned</p>
+                      <p className="text-3xl font-bold">{formatReward(total)}</p>
+                      {isPoints() && <p className="text-xs opacity-75 mt-1">= ${total.toFixed(2)}</p>}
+                    </div>
+                  </div>
+                  <div className="px-6 pb-6 space-y-2">
+                    {completedTasks.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">No chores completed yet this week.</p>
+                    ) : completedTasks.map(task => (
+                      <div key={task.id} className="flex justify-between items-center py-2 border-b border-gray-100">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                          <span className="text-gray-800 font-medium">{task.title}</span>
+                        </div>
+                        <span className="text-green-600 font-bold">{formatReward(task.amount)}</span>
+                      </div>
+                    ))}
+                    {completedTasks.length > 0 && (
+                      <div className="flex justify-between items-center pt-3 border-t-2 border-gray-200">
+                        <span className="font-bold text-gray-900">Total</span>
+                        <span className="text-xl font-bold text-purple-600">{formatReward(total)}</span>
+                      </div>
+                    )}
+                    <button onClick={() => setChildPayslip(false)} className="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-200 transition mt-4">Close</button>
+                  </div>
                 </div>
               </div>
             );
