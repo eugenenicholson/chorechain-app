@@ -63,7 +63,8 @@ const MascotSVG = ({ className = '' }) => (
   </svg>
 );
 
-// Inline mini logo for nav / small uses
+// Inline mini logo for nav / small uses — reserved for future use
+// eslint-disable-next-line no-unused-vars
 const LogoIcon = () => (
   <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
     <rect width="36" height="36" rx="10" fill="#c8ff47"/>
