@@ -36,53 +36,80 @@ const hashPin = async (pin) => {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
-// Child PIN management modal — separate component so it can use hooks
+// Mascot SVG — reused across screens
+const MascotSVG = ({ className = '' }) => (
+  <svg className={className} viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="108" rx="30" ry="26" fill="#c8ff47"/>
+    <path d="M107 95 Q118 82 125 72" stroke="#c8ff47" strokeWidth="10" strokeLinecap="round" fill="none"/>
+    <ellipse cx="44" cy="105" rx="11" ry="7" fill="#c8ff47" transform="rotate(-15 44 105)"/>
+    <circle cx="80" cy="70" r="28" fill="#c8ff47"/>
+    <ellipse cx="72" cy="58" rx="10" ry="7" fill="white" opacity="0.2"/>
+    <path d="M65 65 Q70 60 75 65" stroke="#1a1a2e" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+    <path d="M85 65 Q90 60 95 65" stroke="#1a1a2e" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+    <path d="M64 76 Q80 90 96 76" stroke="#1a1a2e" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+    <path d="M64 76 Q80 84 96 76" fill="white" opacity="0.9"/>
+    <ellipse cx="62" cy="75" rx="7" ry="4.5" fill="#ffb3c8" opacity="0.55"/>
+    <ellipse cx="98" cy="75" rx="7" ry="4.5" fill="#ffb3c8" opacity="0.55"/>
+    <path d="M72 42 Q80 34 88 42" stroke="#1a1a2e" strokeWidth="3" strokeLinecap="round" fill="none"/>
+    <rect x="64" y="128" width="13" height="19" rx="6.5" fill="#9b5de5"/>
+    <rect x="83" y="128" width="13" height="19" rx="6.5" fill="#9b5de5"/>
+    <ellipse cx="70" cy="148" rx="10" ry="5.5" fill="#1a1a2e"/>
+    <ellipse cx="89" cy="148" rx="10" ry="5.5" fill="#1a1a2e"/>
+    <line x1="124" y1="73" x2="142" y2="46" stroke="#ffe347" strokeWidth="3.5" strokeLinecap="round"/>
+    <path d="M142 38 L144.2 44.8 L151.5 44.8 L145.6 48.9 L147.8 55.7 L142 51.6 L136.2 55.7 L138.4 48.9 L132.5 44.8 L139.8 44.8 Z" fill="#ffe347"/>
+    <circle cx="142" cy="44" r="6" fill="#ffe347" opacity="0.25"/>
+    <circle cx="133" cy="58" r="2.5" fill="#ffe347" opacity="0.7"/>
+    <circle cx="124" cy="66" r="1.8" fill="#ffe347" opacity="0.45"/>
+  </svg>
+);
+
+// Inline mini logo for nav / small uses
+const LogoIcon = () => (
+  <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="36" height="36" rx="10" fill="#c8ff47"/>
+    <circle cx="18" cy="17" r="9" fill="#1a1a2e"/>
+    <circle cx="15" cy="15.5" r="1.5" fill="#c8ff47"/>
+    <circle cx="21" cy="15.5" r="1.5" fill="#c8ff47"/>
+    <path d="M13.5 19.5 Q18 23.5 22.5 19.5" stroke="#c8ff47" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
+    <line x1="22" y1="12" x2="28" y2="6" stroke="#ffe347" strokeWidth="1.5" strokeLinecap="round"/>
+    <circle cx="28.5" cy="5.5" r="2.5" fill="#ffe347"/>
+  </svg>
+);
+
+// Child PIN management modal
 const ChildPinModal = ({ child, onSave, onClear, onClose }) => {
   const [newPin, setNewPin] = React.useState('');
   const [confirmPin, setConfirmPin] = React.useState('');
   const [pinError, setPinError] = React.useState('');
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8" onClick={e => e.stopPropagation()}>
-        <h3 className="text-xl font-bold text-gray-900 mb-1">{child.name}'s PIN</h3>
-        <p className="text-sm text-gray-500 mb-6">{child.pin ? 'Set a new PIN or clear it' : 'Set a 4–6 digit PIN'}</p>
+    <div className="child-pin-modal-overlay" onClick={onClose}>
+      <div className="child-pin-modal-sheet" onClick={e => e.stopPropagation()}>
+        <p className="child-pin-modal-title">{child.name}'s PIN</p>
+        <p className="child-pin-modal-sub">{child.pin ? 'Set a new PIN or clear it' : 'Set a 4–6 digit PIN'}</p>
         <input
-          type="password"
-          inputMode="numeric"
-          placeholder="New PIN (4–6 digits)"
-          value={newPin}
-          autoFocus
+          type="password" inputMode="numeric" placeholder="New PIN (4–6 digits)"
+          value={newPin} autoFocus
           onChange={(e) => { setNewPin(e.target.value.replace(/\D/g,'').slice(0,6)); setPinError(''); }}
-          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-center text-2xl tracking-widest font-bold focus:border-purple-500 focus:outline-none mb-3"
+          className="input input--pin mb-3"
         />
         <input
-          type="password"
-          inputMode="numeric"
-          placeholder="Confirm PIN"
+          type="password" inputMode="numeric" placeholder="Confirm PIN"
           value={confirmPin}
           onChange={(e) => { setConfirmPin(e.target.value.replace(/\D/g,'').slice(0,6)); setPinError(''); }}
-          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-center text-2xl tracking-widest font-bold focus:border-purple-500 focus:outline-none mb-3"
+          className="input input--pin mb-3"
         />
-        {pinError && <p className="text-red-600 text-sm text-center mb-3">{pinError}</p>}
-        <button
-          onClick={() => {
-            if (newPin.length < 4) { setPinError('PIN must be at least 4 digits'); return; }
-            if (newPin !== confirmPin) { setPinError('PINs do not match'); return; }
-            onSave(child.id, newPin);
-          }}
-          className="w-full bg-purple-500 text-white py-3 rounded-xl font-bold hover:bg-purple-600 transition mb-3"
-        >
-          Save PIN
-        </button>
+        {pinError && <p className="error-msg mb-3">{pinError}</p>}
+        <button className="btn btn-primary mb-2" onClick={() => {
+          if (newPin.length < 4) { setPinError('PIN must be at least 4 digits'); return; }
+          if (newPin !== confirmPin) { setPinError('PINs do not match'); return; }
+          onSave(child.id, newPin);
+        }}>Save PIN</button>
         {child.pin && (
-          <button
-            onClick={() => { if (window.confirm(`Clear PIN for ${child.name}?`)) onClear(child.id); }}
-            className="w-full bg-red-100 text-red-600 py-3 rounded-xl font-bold hover:bg-red-200 transition mb-3"
-          >
+          <button className="btn btn-danger mb-2" onClick={() => { if (window.confirm(`Clear PIN for ${child.name}?`)) onClear(child.id); }}>
             🗑 Clear PIN
           </button>
         )}
-        <button onClick={onClose} className="w-full text-gray-500 font-bold py-2">Cancel</button>
+        <button className="btn btn-ghost w-full" onClick={onClose}>Cancel</button>
       </div>
     </div>
   );
@@ -622,6 +649,14 @@ const FamilyChoreApp = () => {
   const generateWeeklyTasks = async (fid, data) => {
     if (!data?.taskTemplates) return;
 
+    // Firebase can return arrays as sparse objects {0: "val"} — normalise to real arrays
+    const toArray = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'object') return Object.values(val);
+      return [];
+    };
+
     const today = new Date();
     const todayDow = today.getDay();
 
@@ -694,8 +729,8 @@ const FamilyChoreApp = () => {
             assignedChild: childId,
             dayOfWeek: dow,
             weekKey,
-            accepted: existing.accepted || [],
-            completed: existing.completed || []
+            accepted: toArray(existing.accepted),
+            completed: toArray(existing.completed)
           };
         });
       } else if (template.assignType === 'assigned' && template.assignedChild) {
@@ -712,8 +747,8 @@ const FamilyChoreApp = () => {
             assignedChild: template.assignedChild,
             dayOfWeek: dow,
             weekKey,
-            accepted: existing.accepted || [],
-            completed: existing.completed || []
+            accepted: toArray(existing.accepted),
+            completed: toArray(existing.completed)
           };
         });
       } else {
@@ -730,8 +765,8 @@ const FamilyChoreApp = () => {
             assignedChild: null,
             dayOfWeek: dow,
             weekKey,
-            accepted: existing.accepted || [],
-            completed: existing.completed || []
+            accepted: toArray(existing.accepted),
+            completed: toArray(existing.completed)
           };
         });
       }
@@ -743,11 +778,15 @@ const FamilyChoreApp = () => {
     await set(ref(database, `families/${fid}/lastGeneratedWeek`), weekKey);
   };
 
-  // Re-generate tasks whenever templates change (preserves progress, applies edits)
+  // Re-generate tasks ONLY when templates change — not on every family data update
+  // Using a ref to track the last templates string to avoid unnecessary regeneration
+  const lastTemplatesRef = React.useRef(null);
   useEffect(() => {
-    if (familyId && familyData?.taskTemplates) {
-      generateWeeklyTasks(familyId, familyData);
-    }
+    if (!familyId || !familyData?.taskTemplates) return;
+    const templatesStr = JSON.stringify(familyData.taskTemplates);
+    if (templatesStr === lastTemplatesRef.current) return; // templates unchanged — skip
+    lastTemplatesRef.current = templatesStr;
+    generateWeeklyTasks(familyId, familyData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [familyId, JSON.stringify(familyData?.taskTemplates)]);
 
@@ -757,12 +796,9 @@ const FamilyChoreApp = () => {
       const taskRef = ref(database, `families/${familyId}/childTasks/${taskId}`);
       const snapshot = await get(taskRef);
       const task = snapshot.val() || {};
-      const accepted = task.accepted || [];
+      const accepted = Array.isArray(task.accepted) ? task.accepted : Object.values(task.accepted || {});
       if (!accepted.includes(currentChildId)) {
-        await set(taskRef, {
-          ...task,
-          accepted: [...accepted, currentChildId]
-        });
+        await set(taskRef, { ...task, accepted: [...accepted, currentChildId] });
       }
     } catch (error) {
       setErrorMsg(error.message);
@@ -775,12 +811,9 @@ const FamilyChoreApp = () => {
       const taskRef = ref(database, `families/${familyId}/childTasks/${taskId}`);
       const snapshot = await get(taskRef);
       const task = snapshot.val() || {};
-      const completed = task.completed || [];
+      const completed = Array.isArray(task.completed) ? task.completed : Object.values(task.completed || {});
       if (!completed.includes(currentChildId)) {
-        await set(taskRef, {
-          ...task,
-          completed: [...completed, currentChildId]
-        });
+        await set(taskRef, { ...task, completed: [...completed, currentChildId] });
       }
     } catch (error) {
       setErrorMsg(error.message);
@@ -970,111 +1003,57 @@ const FamilyChoreApp = () => {
   // LOGIN SCREEN
   if (screen === 'login') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:wght@500;700&display=swap');
-          body { font-family: 'Sora', sans-serif; }
-          .font-display { font-family: 'DM Sans', sans-serif; }
-        `}</style>
-        <div className="max-w-md mx-auto pt-20">
-          <div className="text-center mb-12">
-            <div className="inline-block bg-gradient-to-br from-purple-500 via-indigo-500 to-blue-500 rounded-3xl p-5 mb-6 shadow-2xl">
-              <DollarSign className="w-12 h-12 text-white" />
-            </div>
-            <h1 className="text-5xl font-display font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 bg-clip-text text-transparent mb-2">ChoreChain</h1>
-            <p className="text-gray-600 font-light text-lg">Family tasks made fair</p>
-            <p className="text-gray-400 text-xs mt-1">v{APP_VERSION}</p>
+      <div className="screen">
+        <div className="container-sm" style={{paddingTop:'3rem'}}>
+          <div className="auth-logo-wrap">
+            <MascotSVG className="auth-mascot" />
+            <p className="auth-wordmark">Chore<span>Chain</span></p>
+            <p className="auth-tagline">Family tasks made fair</p>
+            <p className="auth-version">v{APP_VERSION}</p>
           </div>
 
-          <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 space-y-6 border border-white/20">
-            <h2 className="text-2xl font-display font-bold text-gray-900">Sign In</h2>
-            
-            <input
-              type="email"
-              placeholder="Email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-              disabled={loading}
-            />
-
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
+          <div className="card space-y-3">
+            <p className="section-title" style={{fontSize:'1.3rem',marginBottom:'0.25rem'}}>Sign In</p>
+            <input type="email" placeholder="Email address" value={email}
+              onChange={(e) => setEmail(e.target.value)} className="input" disabled={loading} />
+            <input type="password" placeholder="Password" value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && signIn()}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-              disabled={loading}
-            />
-
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 accent-purple-500"
-              />
-              <span className="text-sm text-gray-600">Remember me</span>
+              className="input" disabled={loading} />
+            <label className="checkbox-label">
+              <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+              Remember me
             </label>
-
-            {errorMsg && <p className="text-red-600 text-sm font-medium">{errorMsg}</p>}
-
-            <button
-              onClick={signIn}
-              disabled={loading || !!isLockedOut(`login_${email}`)}
-              className="w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {loading ? 'Signing in...' : isLockedOut(`login_${email}`) ? `Locked (${isLockedOut(`login_${email}`)}s)` : <>Sign In <ArrowRight className="w-4 h-4" /></>}
+            {errorMsg && <p className="error-msg">{errorMsg}</p>}
+            <button onClick={signIn} disabled={loading || !!isLockedOut(`login_${email}`)} className="btn btn-primary">
+              {loading ? 'Signing in…' : isLockedOut(`login_${email}`) ? `Locked (${isLockedOut(`login_${email}`)}s)` : <>Sign In <ArrowRight size={16}/></>}
             </button>
 
             {!forgotPasswordMode ? (
-              <div className="text-center">
-                <button
-                  onClick={() => { setForgotPasswordMode(true); setErrorMsg(''); setResetEmailSent(false); }}
-                  className="text-sm text-indigo-500 hover:text-indigo-700 font-medium"
-                >
+              <p className="text-center">
+                <button className="pin-forgot-btn" onClick={() => { setForgotPasswordMode(true); setErrorMsg(''); setResetEmailSent(false); }}>
                   Forgot password?
                 </button>
-              </div>
+              </p>
             ) : (
-              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
-                <p className="text-sm text-indigo-800 font-medium">Enter your email above and we'll send a reset link.</p>
-                {resetEmailSent ? (
-                  <p className="text-green-700 text-sm font-bold text-center">✅ Reset email sent! Check your inbox.</p>
-                ) : (
-                  <button
-                    onClick={sendPasswordReset}
-                    disabled={loading}
-                    className="w-full bg-indigo-500 text-white py-2 rounded-lg font-bold hover:bg-indigo-600 transition disabled:opacity-50 text-sm"
-                  >
-                    {loading ? 'Sending...' : 'Send Reset Email'}
-                  </button>
-                )}
-                <button
-                  onClick={() => { setForgotPasswordMode(false); setResetEmailSent(false); setErrorMsg(''); }}
-                  className="w-full text-gray-500 text-sm font-medium hover:text-gray-700"
-                >
-                  Cancel
-                </button>
+              <div className="pin-bypass-card">
+                <p>Enter your email above and we'll send a reset link.</p>
+                {resetEmailSent
+                  ? <p className="success-msg">✅ Reset email sent! Check your inbox.</p>
+                  : <button className="btn btn-teal" onClick={sendPasswordReset} disabled={loading}>{loading ? 'Sending…' : 'Send Reset Email'}</button>
+                }
+                <button className="btn btn-ghost w-full" onClick={() => { setForgotPasswordMode(false); setResetEmailSent(false); setErrorMsg(''); }}>Cancel</button>
               </div>
             )}
 
-            <div className="border-t border-gray-200 pt-4 text-center space-y-3">
-              <p className="text-gray-600 text-sm">Don't have an account?</p>
-              <button
-                onClick={() => { setScreen('signup'); setEmail(''); setPassword(''); setErrorMsg(''); }}
-                className="text-purple-600 font-bold hover:text-purple-700 text-sm block w-full"
-              >
-                Create a Family Account
-              </button>
-              <button
-                onClick={() => { setScreen('signup'); setJoinFamilyMode(true); setEmail(''); setPassword(''); setErrorMsg(''); }}
-                className="text-indigo-500 font-bold hover:text-indigo-700 text-sm block w-full"
-              >
-                Join an Existing Family
-              </button>
-            </div>
+            <hr className="divider"/>
+            <p className="text-center text-sm text-muted">Don't have an account?</p>
+            <button className="btn btn-secondary" onClick={() => { setScreen('signup'); setEmail(''); setPassword(''); setErrorMsg(''); }}>
+              Create a Family Account
+            </button>
+            <button className="btn btn-ghost w-full" onClick={() => { setScreen('signup'); setJoinFamilyMode(true); setEmail(''); setPassword(''); setErrorMsg(''); }}>
+              Join an Existing Family
+            </button>
           </div>
         </div>
       </div>
@@ -1084,123 +1063,57 @@ const FamilyChoreApp = () => {
   // SIGNUP SCREEN
   if (screen === 'signup') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
-        <div className="max-w-md mx-auto pt-20">
-          <button 
-            onClick={() => { setScreen('login'); setJoinFamilyMode(false); setJoinFamilyCode(''); setErrorMsg(''); }} 
-            className="text-purple-600 font-bold mb-6 flex items-center gap-1"
-          >
+      <div className="screen">
+        <div className="container-sm" style={{paddingTop:'2rem'}}>
+          <button className="btn btn-back mb-4" style={{width:'auto'}}
+            onClick={() => { setScreen('login'); setJoinFamilyMode(false); setJoinFamilyCode(''); setErrorMsg(''); }}>
             ← Back
           </button>
-
-          <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 space-y-6 border border-white/20">
-            <h2 className="text-2xl font-display font-bold text-gray-900">{joinFamilyMode ? 'Join a Family' : 'Create Family Account'}</h2>
-
+          <div className="card space-y-3">
+            <p className="section-title" style={{fontSize:'1.3rem',marginBottom:'0.25rem'}}>
+              {joinFamilyMode ? 'Join a Family' : 'Create Family Account'}
+            </p>
             {joinFamilyMode ? (
               <>
-                <p className="text-gray-600 text-sm">Ask the family admin for their 8-character family code.</p>
-                <input
-                  type="email"
-                  placeholder="Your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-                  disabled={loading}
-                />
-                <input
-                  type="password"
-                  placeholder="Password (min 6 characters)"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-                  disabled={loading}
-                />
-                <input
-                  type="text"
-                  placeholder="Family code (e.g. XXXXXXXX)"
-                  value={joinFamilyCode}
+                <p className="text-sm text-muted">Ask the family admin for their 8-character family code.</p>
+                <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" disabled={loading} />
+                <input type="password" placeholder="Password (min 6 characters)" value={password} onChange={(e) => setPassword(e.target.value)} className="input" disabled={loading} />
+                <input type="text" placeholder="Family code (e.g. XXXXXXXX)" value={joinFamilyCode}
                   onChange={(e) => setJoinFamilyCode(e.target.value.toUpperCase())}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition font-mono tracking-widest"
-                  maxLength={8}
-                  disabled={loading}
-                />
-                {errorMsg && <p className="text-red-600 text-sm font-medium">{errorMsg}</p>}
-                <button
-                  onClick={async () => {
-                    setErrorMsg('');
-                    if (!email || !password || !joinFamilyCode) { setErrorMsg('Please fill in all fields'); return; }
-                    if (password.length < 6) { setErrorMsg('Password must be at least 6 characters'); return; }
-                    setLoading(true);
-                    signingUpRef.current = true;
-                    try {
-                      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                      setCurrentUser(userCredential.user);
-                      try { await sendEmailVerification(userCredential.user); } catch (_) {}
-                      await joinFamily(userCredential.user.uid, userCredential.user.email);
-                    } catch (error) {
-                      if (error.code === 'auth/email-already-in-use') {
-                        // Already has account — just sign in and join
-                        try {
-                          const cred = await signInWithEmailAndPassword(auth, email, password);
-                          await joinFamily(cred.user.uid, cred.user.email);
-                        } catch (e) { setErrorMsg(e.message); }
-                      } else {
-                        setErrorMsg(error.message);
-                      }
-                    } finally {
-                      signingUpRef.current = false;
-                      setLoading(false);
-                    }
-                  }}
-                  disabled={loading}
-                  className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {loading ? 'Joining...' : <>Join Family <ArrowRight className="w-4 h-4" /></>}
+                  className="input input--mono" maxLength={8} disabled={loading} />
+                {errorMsg && <p className="error-msg">{errorMsg}</p>}
+                <button className="btn btn-primary" disabled={loading} onClick={async () => {
+                  setErrorMsg('');
+                  if (!email || !password || !joinFamilyCode) { setErrorMsg('Please fill in all fields'); return; }
+                  if (password.length < 6) { setErrorMsg('Password must be at least 6 characters'); return; }
+                  setLoading(true); signingUpRef.current = true;
+                  try {
+                    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    setCurrentUser(userCredential.user);
+                    try { await sendEmailVerification(userCredential.user); } catch (_) {}
+                    await joinFamily(userCredential.user.uid, userCredential.user.email);
+                  } catch (error) {
+                    if (error.code === 'auth/email-already-in-use') {
+                      try { const cred = await signInWithEmailAndPassword(auth, email, password); await joinFamily(cred.user.uid, cred.user.email); }
+                      catch (e) { setErrorMsg(e.message); }
+                    } else { setErrorMsg(error.message); }
+                  } finally { signingUpRef.current = false; setLoading(false); }
+                }}>
+                  {loading ? 'Joining…' : <>Join Family <ArrowRight size={16}/></>}
                 </button>
-                <button onClick={() => setJoinFamilyMode(false)} className="w-full text-gray-500 text-sm font-medium hover:text-gray-700 text-center">
-                  Create a new family instead
-                </button>
+                <button className="btn btn-ghost w-full" onClick={() => setJoinFamilyMode(false)}>Create a new family instead</button>
               </>
             ) : (
               <>
-                <input
-                  type="text"
-                  placeholder="Family name (e.g., Smith Family)"
-                  value={familyName}
-                  onChange={(e) => setFamilyName(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-                  disabled={loading}
-                />
-                <input
-                  type="email"
-                  placeholder="Your email (parent)"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-                  disabled={loading}
-                />
-                <input
-                  type="password"
-                  placeholder="Password (min 6 characters)"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-                  disabled={loading}
-                />
-                {errorMsg && <p className="text-red-600 text-sm font-medium">{errorMsg}</p>}
-                <button
-                  onClick={signUp}
-                  disabled={loading}
-                  className="w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {loading ? 'Creating...' : <>Create Account <ArrowRight className="w-4 h-4" /></>}
+                <input type="text" placeholder="Family name (e.g., Smith Family)" value={familyName} onChange={(e) => setFamilyName(e.target.value)} className="input" disabled={loading} />
+                <input type="email" placeholder="Your email (parent)" value={email} onChange={(e) => setEmail(e.target.value)} className="input" disabled={loading} />
+                <input type="password" placeholder="Password (min 6 characters)" value={password} onChange={(e) => setPassword(e.target.value)} className="input" disabled={loading} />
+                {errorMsg && <p className="error-msg">{errorMsg}</p>}
+                <button className="btn btn-primary" onClick={signUp} disabled={loading}>
+                  {loading ? 'Creating…' : <>Create Account <ArrowRight size={16}/></>}
                 </button>
-                <p className="text-gray-600 text-sm text-center">
-                  Your family gets a unique code to share with a second parent.
-                </p>
-                <button onClick={() => setJoinFamilyMode(true)} className="w-full text-indigo-500 text-sm font-medium hover:text-indigo-700 text-center">
-                  Join an existing family instead
-                </button>
+                <p className="text-center text-sm text-muted">Your family gets a unique code to share with a second parent.</p>
+                <button className="btn btn-ghost w-full" onClick={() => setJoinFamilyMode(true)}>Join an existing family instead</button>
               </>
             )}
           </div>
@@ -1212,68 +1125,40 @@ const FamilyChoreApp = () => {
   // FAMILY HOME SCREEN
   if (screen === 'family-home' && familyData && currentUser) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
-        <div className="max-w-md mx-auto pt-16">
-          <div className="text-center mb-12">
-            <div className="inline-block bg-gradient-to-br from-purple-500 via-indigo-500 to-blue-500 rounded-3xl p-5 mb-6 shadow-2xl">
-              <DollarSign className="w-12 h-12 text-white" />
-            </div>
-            <h1 className="text-4xl font-display font-bold text-gray-900 mb-2">{familyData.name}</h1>
+      <div className="screen">
+        <div className="container-sm home-wrap">
+          <div className="home-logo-wrap">
+            <MascotSVG className="home-mascot" />
+            <p className="home-family-name">{familyData.name}</p>
           </div>
 
-          <div className="space-y-4">
-            <button
-              onClick={() => setScreen('parentPin')}
-              className="w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 text-white py-4 rounded-2xl font-bold hover:shadow-lg transition text-lg shadow-lg"
-            >
-              👤 Parent Access
-            </button>
+          {familyData.children && Object.keys(familyData.children).length > 0 ? (
+            <>
+              <p className="home-who-label">Who are you?</p>
+              <div className="home-children">
+                {Object.values(familyData.children).map(child => (
+                  <button key={child.id} className="btn-child" onClick={() => {
+                    if (child.pin) { setPendingChildId(child.id); setChildPinAttempt(''); setChildPinError(''); setScreen('childPin'); }
+                    else { setCurrentChildId(child.id); setScreen('child'); }
+                  }}>
+                    {child.name}{child.pin ? ' 🔒' : ''}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-center text-muted text-sm mb-4">Parents: add children to get started!</p>
+          )}
 
-            {familyData.children && Object.keys(familyData.children).length > 0 ? (
-              <>
-                <p className="text-gray-600 text-center text-sm mt-8 mb-4 font-medium">Or login as:</p>
-                <div className="space-y-3">
-                  {Object.values(familyData.children).map(child => (
-                    <button
-                      key={child.id}
-                      onClick={() => {
-                        if (child.pin) {
-                          setPendingChildId(child.id);
-                          setChildPinAttempt('');
-                          setChildPinError('');
-                          setScreen('childPin');
-                        } else {
-                          setCurrentChildId(child.id);
-                          setScreen('child');
-                        }
-                      }}
-                      className="w-full bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 text-white py-3 rounded-2xl font-bold hover:shadow-lg transition shadow-md flex items-center justify-center gap-2"
-                    >
-                      👧 {child.name}{child.pin ? ' 🔒' : ''}
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="text-gray-500 text-center text-sm mt-8">Parents: add children to get started!</p>
-            )}
-
-            <button
-              onClick={logout}
-              className="w-full text-red-600 font-bold hover:text-red-700 mt-8 py-2 flex items-center justify-center gap-2"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
+          <div className="home-parent-zone">
+            <button className="btn btn-secondary" onClick={() => setScreen('parentPin')}>👤 Parent Access</button>
+            <button className="btn btn-ghost w-full flex items-center justify-center gap-2" onClick={logout} style={{color:'var(--red)'}}>
+              <LogOut size={15}/> Logout
             </button>
             {currentUser?.uid === ADMIN_UID && (
-              <button
-                onClick={() => setScreen('admin')}
-                className="w-full text-gray-400 hover:text-gray-600 py-2 text-xs font-medium flex items-center justify-center gap-1 mt-1"
-              >
-                ⚙️ Admin
-              </button>
+              <button className="btn btn-ghost w-full" onClick={() => setScreen('admin')} style={{fontSize:'0.75rem'}}>⚙️ Admin</button>
             )}
-            <p className="text-gray-400 text-xs text-center mt-4">v{APP_VERSION}</p>
+            <p className="home-version">v{APP_VERSION}</p>
           </div>
         </div>
       </div>
@@ -1284,69 +1169,46 @@ const FamilyChoreApp = () => {
   if (screen === 'childPin' && pendingChildId && familyData) {
     const child = familyData.children?.[pendingChildId];
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-indigo-50 p-4">
-        <div className="max-w-md mx-auto pt-32">
-          <div className="text-center mb-12">
-            <div className="text-6xl mb-4">👧</div>
-            <h1 className="text-3xl font-display font-bold text-gray-900 mb-2">{child?.name}</h1>
-            <p className="text-gray-600">Enter your PIN</p>
+      <div className="screen">
+        <div className="container-sm pin-screen-wrap">
+          <div className="pin-avatar">
+            <MascotSVG className="auth-mascot" />
+            <p className="pin-name">{child?.name}</p>
+            <p className="pin-sub">Enter your PIN</p>
           </div>
-          <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 space-y-6 border border-white/20">
+          <div className="card space-y-3">
             {isLockedOut(`childPin_${pendingChildId}`) && (
-              <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 text-center">
-                <p className="text-red-600 font-bold">🔒 Too many attempts</p>
-                <p className="text-red-500 text-sm mt-1">Try again in {isLockedOut(`childPin_${pendingChildId}`)} seconds</p>
+              <div className="pin-lockout">
+                <p>🔒 Too many attempts</p>
+                <span>Try again in {isLockedOut(`childPin_${pendingChildId}`)} seconds</span>
               </div>
             )}
-            <input
-              type="password"
-              inputMode="numeric"
-              placeholder="••••"
-              value={childPinAttempt}
-              autoFocus
+            <input type="password" inputMode="numeric" placeholder="••••" value={childPinAttempt} autoFocus
               disabled={!!isLockedOut(`childPin_${pendingChildId}`)}
+              className="input input--pin"
+              maxLength="6"
               onChange={(e) => {
                 if (isLockedOut(`childPin_${pendingChildId}`)) return;
                 const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                setChildPinAttempt(val);
-                setChildPinError('');
+                setChildPinAttempt(val); setChildPinError('');
                 if (val.length >= 4) {
                   setTimeout(async () => {
                     let match = false;
-                    if (child?.pinHashed) {
-                      const hashed = await hashPin(val);
-                      match = hashed === child.pin;
-                    } else {
-                      match = val === child?.pin;
-                    }
+                    if (child?.pinHashed) { const hashed = await hashPin(val); match = hashed === child.pin; }
+                    else { match = val === child?.pin; }
                     const childLockKey = `childPin_${pendingChildId}`;
-                    if (match) {
-                      clearAttempts(childLockKey);
-                      setCurrentChildId(pendingChildId);
-                      setPendingChildId(null);
-                      setChildPinAttempt('');
-                      setScreen('child');
-                    } else if (val.length >= 4) {
-                      const count = recordFailedAttempt(childLockKey);
-                      const newLock = isLockedOut(childLockKey);
-                      setChildPinError(newLock
-                        ? `Too many attempts. Locked for ${newLock}s.`
-                        : `Incorrect PIN (${count} attempt${count > 1 ? 's' : ''}).`);
+                    if (match) { clearAttempts(childLockKey); setCurrentChildId(pendingChildId); setPendingChildId(null); setChildPinAttempt(''); setScreen('child'); }
+                    else if (val.length >= 4) {
+                      const count = recordFailedAttempt(childLockKey); const newLock = isLockedOut(childLockKey);
+                      setChildPinError(newLock ? `Too many attempts. Locked for ${newLock}s.` : `Incorrect PIN (${count} attempt${count > 1 ? 's' : ''}).`);
                       setChildPinAttempt('');
                     }
                   }, 100);
                 }
               }}
-              maxLength="6"
-              className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-5xl text-center font-bold tracking-widest focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition disabled:opacity-50"
             />
-            {childPinError && <p className="text-red-600 text-sm text-center font-medium">{childPinError}</p>}
-            <button
-              onClick={() => { setPendingChildId(null); setChildPinAttempt(''); setScreen('family-home'); }}
-              className="w-full text-purple-600 font-bold hover:text-purple-700"
-            >
-              ← Back
-            </button>
+            {childPinError && <p className="error-msg text-center">{childPinError}</p>}
+            <button className="btn btn-ghost w-full" onClick={() => { setPendingChildId(null); setChildPinAttempt(''); setScreen('family-home'); }}>← Back</button>
           </div>
         </div>
       </div>
@@ -1357,172 +1219,87 @@ const FamilyChoreApp = () => {
   if (screen === 'parentPin') {
     if (settingPin) {
       return (
-        <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
-          <div className="max-w-md mx-auto pt-32">
-            <div className="text-center mb-12">
-              <h1 className="text-3xl font-display font-bold text-gray-900 mb-2">Set Parent PIN</h1>
-              <p className="text-gray-600">4-digit security code</p>
+        <div className="screen">
+          <div className="container-sm pin-screen-wrap">
+            <div className="pin-avatar">
+              <p className="pin-name">Set Parent PIN</p>
+              <p className="pin-sub">4–6 digit security code</p>
             </div>
-
-            <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 space-y-6 border border-white/20">
-              <input
-                type="password"
-                inputMode="numeric"
-                placeholder="••••"
-                value={parentPin}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                  setParentPin(val);
-                  if (val.length === 4) {
-                    setTimeout(() => saveParentPin(), 100);
-                  }
-                }}
-                maxLength="4"
-                className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-5xl text-center font-bold tracking-widest focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-              />
-
-              {errorMsg && <p className="text-red-600 text-sm">{errorMsg}</p>}
-
-              <button
-                onClick={saveParentPin}
-                className="w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition"
-              >
-                Set PIN
-              </button>
-
-              <button
-                onClick={() => { setSettingPin(false); setParentPin(''); setErrorMsg(''); }}
-                className="w-full text-gray-600 font-bold hover:text-gray-700"
-              >
-                Skip for now
-              </button>
+            <div className="card space-y-3">
+              <input type="password" inputMode="numeric" placeholder="••••" value={parentPin} className="input input--pin"
+                onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 4); setParentPin(val); if (val.length === 4) setTimeout(() => saveParentPin(), 100); }}
+                maxLength="4" />
+              {errorMsg && <p className="error-msg">{errorMsg}</p>}
+              <button className="btn btn-primary" onClick={saveParentPin}>Set PIN</button>
+              <button className="btn btn-ghost w-full" onClick={() => { setSettingPin(false); setParentPin(''); setErrorMsg(''); }}>Skip for now</button>
             </div>
           </div>
         </div>
       );
     }
-
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
-        <div className="max-w-md mx-auto pt-32">
-          <div className="text-center mb-12">
-            <h1 className="text-3xl font-display font-bold text-gray-900 mb-2">Parent Access</h1>
-            <p className="text-gray-600">Enter your 4-digit PIN</p>
+      <div className="screen">
+        <div className="container-sm pin-screen-wrap">
+          <div className="pin-avatar">
+            <p className="pin-name">Parent Access</p>
+            <p className="pin-sub">Enter your PIN</p>
           </div>
-
-          <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 space-y-6 border border-white/20">
+          <div className="card space-y-3">
             {!familyData?.parentPin ? (
               <>
-                <p className="text-gray-600 text-center">No PIN set. Set one now.</p>
-                <button
-                  onClick={() => setSettingPin(true)}
-                  className="w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition"
-                >
-                  Set PIN Now
-                </button>
+                <p className="text-center text-muted text-sm">No PIN set. Set one now.</p>
+                <button className="btn btn-primary" onClick={() => setSettingPin(true)}>Set PIN Now</button>
               </>
             ) : (
               <>
                 {isPinLocked() && (
-                  <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 text-center">
-                    <p className="text-red-600 font-bold">🔒 Too many attempts</p>
-                    <p className="text-red-500 text-sm mt-1">Try again in {lockCountdown} seconds</p>
+                  <div className="pin-lockout">
+                    <p>🔒 Too many attempts</p>
+                    <span>Try again in {lockCountdown} seconds</span>
                   </div>
                 )}
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  placeholder="••••"
-                  value={pinAttempt}
-                  disabled={isPinLocked()}
+                <input type="password" inputMode="numeric" placeholder="••••" value={pinAttempt}
+                  disabled={isPinLocked()} className="input input--pin" maxLength="4" autoFocus
                   onChange={(e) => {
                     if (isPinLocked()) return;
-                    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                    setPinAttempt(val);
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 6); setPinAttempt(val);
                     if (val.length >= 4) {
                       setTimeout(async () => {
-                        // Detect legacy plain-text PINs and force reset
                         if (!familyData.pinHashed) {
-                          if (val === familyData.parentPin) {
-                            setScreen('parent');
-                            setPinAttempt('');
-                            setErrorMsg('⚠️ Please reset your PIN for improved security.');
-                          } else {
-                            setErrorMsg('Incorrect PIN');
-                            setPinAttempt('');
-                          }
+                          if (val === familyData.parentPin) { setScreen('parent'); setPinAttempt(''); setErrorMsg('⚠️ Please reset your PIN for improved security.'); }
+                          else { setErrorMsg('Incorrect PIN'); setPinAttempt(''); }
                           return;
                         }
                         const hashed = await hashPin(val);
-                        if (hashed === familyData.parentPin) {
-                          setScreen('parent');
-                          setPinAttempt('');
-                          setErrorMsg('');
-                          setPinFailCount(0);
-                        } else {
+                        if (hashed === familyData.parentPin) { setScreen('parent'); setPinAttempt(''); setErrorMsg(''); setPinFailCount(0); }
+                        else {
                           recordPinFailure();
-                          setErrorMsg(pinFailCount + 1 >= PIN_MAX_ATTEMPTS
-                            ? `Too many attempts. Locked for ${PIN_LOCKOUT_SECONDS}s.`
-                            : `Incorrect PIN (${PIN_MAX_ATTEMPTS - pinFailCount - 1} attempts remaining)`);
+                          setErrorMsg(pinFailCount + 1 >= PIN_MAX_ATTEMPTS ? `Too many attempts. Locked for ${PIN_LOCKOUT_SECONDS}s.` : `Incorrect PIN (${PIN_MAX_ATTEMPTS - pinFailCount - 1} attempts remaining)`);
                           setPinAttempt('');
                         }
                       }, 100);
                     }
                   }}
-                  maxLength="4"
-                  className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-5xl text-center font-bold tracking-widest focus:border-purple-500 focus:outline-none bg-white/50 backdrop-blur-sm transition"
-                  autoFocus
                 />
-
-                {errorMsg && <p className="text-red-600 text-sm text-center font-medium">{errorMsg}</p>}
-
-                {/* Forgot PIN — bypass via account password */}
-                {!pinBypassMode ? (
-                  <div className="text-center">
-                    <button
-                      onClick={() => { setPinBypassMode(true); setPinBypassError(''); setPinBypassPassword(''); }}
-                      className="text-sm text-indigo-500 hover:text-indigo-700 font-medium"
-                    >
-                      Forgot PIN?
-                    </button>
-                  </div>
-                ) : (
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
-                    <p className="text-sm text-indigo-800 font-medium text-center">Enter your account password to reset your PIN</p>
-                    <input
-                      type="password"
-                      placeholder="Account password"
-                      value={pinBypassPassword}
-                      onChange={(e) => { setPinBypassPassword(e.target.value); setPinBypassError(''); }}
-                      onKeyPress={(e) => e.key === 'Enter' && bypassPinWithPassword()}
-                      className="w-full px-4 py-3 border-2 border-indigo-200 rounded-xl focus:border-indigo-500 focus:outline-none bg-white transition"
-                      autoFocus
-                    />
-                    {pinBypassError && <p className="text-red-600 text-sm text-center">{pinBypassError}</p>}
-                    <button
-                      onClick={bypassPinWithPassword}
-                      disabled={loading}
-                      className="w-full bg-indigo-500 text-white py-2 rounded-lg font-bold hover:bg-indigo-600 transition disabled:opacity-50 text-sm"
-                    >
-                      {loading ? 'Verifying...' : 'Verify & Reset PIN'}
-                    </button>
-                    <button
-                      onClick={() => { setPinBypassMode(false); setPinBypassPassword(''); setPinBypassError(''); }}
-                      className="w-full text-gray-500 text-sm font-medium hover:text-gray-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
+                {errorMsg && <p className="error-msg text-center">{errorMsg}</p>}
+                <div className="pin-forgot-wrap">
+                  {!pinBypassMode ? (
+                    <button className="pin-forgot-btn" onClick={() => { setPinBypassMode(true); setPinBypassError(''); setPinBypassPassword(''); }}>Forgot PIN?</button>
+                  ) : (
+                    <div className="pin-bypass-card">
+                      <p>Enter your account password to reset your PIN</p>
+                      <input type="password" placeholder="Account password" value={pinBypassPassword} className="input"
+                        onChange={(e) => { setPinBypassPassword(e.target.value); setPinBypassError(''); }}
+                        onKeyPress={(e) => e.key === 'Enter' && bypassPinWithPassword()} autoFocus />
+                      {pinBypassError && <p className="error-msg">{pinBypassError}</p>}
+                      <button className="btn btn-teal" onClick={bypassPinWithPassword} disabled={loading}>{loading ? 'Verifying…' : 'Verify & Reset PIN'}</button>
+                      <button className="btn btn-ghost w-full" onClick={() => { setPinBypassMode(false); setPinBypassPassword(''); setPinBypassError(''); }}>Cancel</button>
+                    </div>
+                  )}
+                </div>
               </>
             )}
-
-            <button
-              onClick={() => { setScreen('family-home'); setPinBypassMode(false); setPinBypassPassword(''); setPinBypassError(''); }}
-              className="w-full text-purple-600 font-bold hover:text-purple-700"
-            >
-              ← Back
-            </button>
+            <button className="btn btn-ghost w-full" onClick={() => { setScreen('family-home'); setPinBypassMode(false); setPinBypassPassword(''); setPinBypassError(''); }}>← Back</button>
           </div>
         </div>
       </div>
@@ -1532,51 +1309,34 @@ const FamilyChoreApp = () => {
   // PARENT SCREEN
   if (screen === 'parent' && familyData) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex justify-between items-center mb-8 mt-6">
+      <div className="screen">
+        <div className="container-lg">
+          <div className="parent-header">
             <div>
-              <h1 className="text-4xl font-display font-bold text-gray-900">{familyData.name}</h1>
-              <p className="text-gray-600 font-light">Parent Dashboard</p>
+              <p className="parent-header-title">{familyData.name}</p>
+              <p className="parent-header-sub">Parent Dashboard</p>
             </div>
-            <button
-              onClick={() => setScreen('family-home')}
-              className="flex items-center gap-2 bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition font-bold"
-            >
-              ← Back
-            </button>
+            <button className="btn btn-back" onClick={() => setScreen('family-home')}>← Back</button>
           </div>
 
-          {/* PIN upgrade warning banner */}
           {familyData?.parentPin && !familyData?.pinHashed && (
-            <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 mb-6 flex items-center justify-between gap-4">
-              <p className="text-amber-800 font-medium text-sm">⚠️ Your PIN needs a security upgrade.</p>
-              <button
-                onClick={() => { setSettingPin(true); setScreen('parentPin'); }}
-                className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-2 rounded-xl text-sm whitespace-nowrap transition"
-              >
-                Reset PIN
-              </button>
+            <div className="warning-banner">
+              <p>⚠️ Your PIN needs a security upgrade.</p>
+              <button className="btn" onClick={() => { setSettingPin(true); setScreen('parentPin'); }}>Reset PIN</button>
             </div>
           )}
 
           {/* Earnings Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="earnings-grid">
             {familyData.children && Object.values(familyData.children).map(child => {
               const earnings = calculateChildEarnings(child.id);
-              const completedCount = familyData.childTasks
-                ? Object.values(familyData.childTasks).filter(t => t.completed?.includes(child.id)).length
-                : 0;
+              const completedCount = familyData.childTasks ? Object.values(familyData.childTasks).filter(t => t.completed?.includes(child.id)).length : 0;
               return (
-                <div
-                  key={child.id}
-                  onClick={() => setPayslipChild(child)}
-                  className="bg-gradient-to-br from-purple-100 to-indigo-100 rounded-2xl shadow-lg p-6 border border-purple-200 cursor-pointer hover:shadow-xl hover:scale-105 transition-all"
-                >
-                  <p className="text-gray-600 text-sm font-medium mb-2">This Week</p>
-                  <p className="text-4xl font-bold text-transparent bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text">{formatReward(earnings)}</p>
-                  <p className="text-gray-900 font-bold mt-2">{child.name}</p>
-                  <p className="text-gray-500 text-xs mt-1">{completedCount} chore{completedCount !== 1 ? 's' : ''} completed · tap for payslip</p>
+                <div key={child.id} className="earnings-card" onClick={() => setPayslipChild(child)}>
+                  <p className="earnings-week-label">This Week</p>
+                  <p className="earnings-amount">{formatReward(earnings)}</p>
+                  <p className="earnings-name">{child.name}</p>
+                  <p className="earnings-count">{completedCount} chore{completedCount !== 1 ? 's' : ''} · tap for payslip</p>
                 </div>
               );
             })}
@@ -1585,181 +1345,85 @@ const FamilyChoreApp = () => {
           {/* Payslip Modal */}
           {payslipChild && (() => {
             const child = payslipChild;
-            const completedTasks = familyData.childTasks
-              ? Object.values(familyData.childTasks).filter(t => t.completed?.includes(child.id))
-              : [];
+            const completedTasks = familyData.childTasks ? Object.values(familyData.childTasks).filter(t => t.completed?.includes(child.id)) : [];
             const total = completedTasks.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
-            // Group by day
             const byDay = {};
-            completedTasks.forEach(task => {
-              const d = task.dayOfWeek ?? 'other';
-              if (!byDay[d]) byDay[d] = [];
-              byDay[d].push(task);
-            });
+            completedTasks.forEach(task => { const d = task.dayOfWeek ?? 'other'; if (!byDay[d]) byDay[d] = []; byDay[d].push(task); });
             const pd2 = familyData.payday != null ? familyData.payday : 5;
             const wsd2 = (pd2 + 1) % 7;
-            const sortedDayKeys = Object.keys(byDay).sort((a, b) => {
-              const order = d => d === 'other' ? 99 : (Number(d) - wsd2 + 7) % 7;
-              return order(a) - order(b);
-            });
-            // Get current week label based on payday setting
-            const today = new Date();
-            const todayDow = today.getDay();
-            const pd = familyData.payday != null ? familyData.payday : 5;
-            const wsd = (pd + 1) % 7;
+            const sortedDayKeys = Object.keys(byDay).sort((a, b) => { const order = d => d === 'other' ? 99 : (Number(d) - wsd2 + 7) % 7; return order(a) - order(b); });
+            const today = new Date(); const todayDow = today.getDay();
+            const pd = familyData.payday != null ? familyData.payday : 5; const wsd = (pd + 1) % 7;
             const daysBack = (todayDow - wsd + 7) % 7;
-            const weekStartDate = new Date(today);
-            weekStartDate.setDate(today.getDate() - daysBack);
-            const weekEndDate = new Date(weekStartDate);
-            weekEndDate.setDate(weekStartDate.getDate() + 6);
+            const weekStartDate = new Date(today); weekStartDate.setDate(today.getDate() - daysBack);
+            const weekEndDate = new Date(weekStartDate); weekEndDate.setDate(weekStartDate.getDate() + 6);
             const fmt = d => d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
             const weekLabel = `${fmt(weekStartDate)} – ${fmt(weekEndDate)}`;
             return (
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPayslipChild(null)}>
-                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                  {/* Sticky back button for PWA */}
-                  <div className="sticky top-0 z-10 flex justify-between items-center px-6 pt-4 pb-2 bg-white rounded-t-3xl">
-                    <button onClick={() => setPayslipChild(null)} className="text-purple-600 font-bold flex items-center gap-1">← Back</button>
+              <div className="modal-overlay" onClick={() => setPayslipChild(null)}>
+                <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+                  <div className="modal-sticky-top">
+                    <button className="btn-ghost" onClick={() => setPayslipChild(null)}>← Back</button>
                   </div>
-                  {/* Header */}
-                  <div className="bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 rounded-t-3xl p-6 text-white">
+                  <div className="payslip-header">
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="text-sm font-light opacity-80 mb-1">Weekly Payslip · {isPoints() ? "Points" : "Dollars"}</p>
-                        <h2 className="text-2xl font-bold">{child.name}</h2>
-                        <p className="text-sm opacity-80 mt-1">{weekLabel}</p>
+                        <p className="payslip-header-sub">Weekly Payslip · {isPoints() ? 'Points' : 'Dollars'}</p>
+                        <p className="payslip-header-name">{child.name}</p>
+                        <p className="payslip-header-week">{weekLabel}</p>
                       </div>
-                      <button onClick={() => setPayslipChild(null)} className="text-white/70 hover:text-white text-2xl font-bold leading-none">×</button>
+                      <button className="btn-ghost" style={{color:'rgba(255,255,255,0.6)',fontSize:'1.3rem'}} onClick={() => setPayslipChild(null)}>×</button>
                     </div>
-                    <div className="mt-4 bg-white/20 rounded-2xl p-4">
-                      <p className="text-sm opacity-80">Total {isPoints() ? "Points" : ""} Earned</p>
-                      <p className="text-4xl font-bold">{formatReward(total)}</p>
-                      {isPoints() && <p className="text-sm opacity-75 mt-1">= ${total.toFixed(2)} ({pointsPerDollar()} pts = $1)</p>}
+                    <div className="payslip-total-box">
+                      <p className="payslip-total-label">Total {isPoints() ? 'Points' : ''} Earned</p>
+                      <p className="payslip-total-value">{formatReward(total)}</p>
+                      {isPoints() && <p style={{fontSize:'0.75rem',opacity:0.7,marginTop:'0.2rem'}}>= ${total.toFixed(2)} ({pointsPerDollar()} pts = $1)</p>}
                     </div>
                   </div>
-                  {/* Chores list */}
-                  <div className="p-6">
+                  <div className="payslip-body">
                     {completedTasks.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No chores completed this week.</p>
+                      <p className="text-center text-muted text-sm" style={{padding:'1rem 0'}}>No chores completed this week.</p>
                     ) : (
-                      <div className="space-y-5">
+                      <>
                         {sortedDayKeys.map(dayKey => (
                           <div key={dayKey}>
-                            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                              {dayKey === 'other' ? 'Other' : dayNames[Number(dayKey)]}
-                            </p>
-                            <div className="space-y-2">
-                              {byDay[dayKey].map(task => (
-                                <div key={task.id} className="flex justify-between items-center py-2 border-b border-gray-100">
-                                  <div className="flex items-center gap-2">
-                                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                                    <span className="text-gray-800 font-medium">{task.title}</span>
-                                  </div>
-                                  <span className="text-green-600 font-bold">{formatReward(task.amount)}</span>
-                                </div>
-                              ))}
-                            </div>
+                            <p className="payslip-day-label">{dayKey === 'other' ? 'Other' : dayNames[Number(dayKey)]}</p>
+                            {byDay[dayKey].map(task => (
+                              <div key={task.id} className="payslip-row">
+                                <span className="payslip-row-title"><CheckCircle2 size={15} style={{color:'var(--lime)',flexShrink:0}}/>{task.title}</span>
+                                <span className="payslip-row-amount">{formatReward(task.amount)}</span>
+                              </div>
+                            ))}
                           </div>
                         ))}
-                        {/* Total row */}
-                        <div className="flex justify-between items-center pt-3 border-t-2 border-gray-200">
-                          <span className="font-bold text-gray-900">Total</span>
-                          <span className="text-xl font-bold text-purple-600">{formatReward(total)}</span>
-                        </div>
-                      </div>
+                        <div className="payslip-total-row"><span>Total</span><span>{formatReward(total)}</span></div>
+                      </>
                     )}
-                    <div className="mt-6 space-y-3">
-                      {/* Print button */}
-                      <button
-                        onClick={() => {
-                          const printWindow = window.open('', '_blank');
-                          const ppd = pointsPerDollar();
-                          const pts = isPoints();
-                          const fmtAmt = (amt) => pts ? `${Math.round(parseFloat(amt||0) * ppd)} pts` : `$${parseFloat(amt||0).toFixed(2)}`;
-                          const rows = completedTasks.length === 0
-                            ? '<tr><td colspan="2" style="text-align:center;color:#888;padding:16px;">No chores completed this week.</td></tr>'
-                            : sortedDayKeys.map(dayKey => {
-                                const dayLabel = dayKey === 'other' ? 'Other' : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][Number(dayKey)];
-                                const dayRows = byDay[dayKey].map(t =>
-                                  `<tr><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;">✓ ${t.title}</td><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;color:#16a34a;font-weight:bold;">${fmtAmt(t.amount)}</td></tr>`
-                                ).join('');
-                                return `<tr><td colspan="2" style="padding:10px 12px 4px;font-size:11px;font-weight:bold;color:#888;text-transform:uppercase;letter-spacing:0.05em;background:#f9f9f9;">${dayLabel}</td></tr>${dayRows}`;
-                              }).join('');
-                          const conversionNote = pts ? `<p style="font-size:12px;opacity:0.75;margin:4px 0 0;">${ppd} pts = $1.00 &nbsp;·&nbsp; Total value: $${total.toFixed(2)}</p>` : '';
-                          printWindow.document.write(`<!DOCTYPE html><html><head><title>Payslip – ${child.name}</title><style>
-                            body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 32px; color: #111; }
-                            .header { background: linear-gradient(135deg, #7c3aed, #4f46e5); color: white; border-radius: 16px; padding: 24px 28px; margin-bottom: 24px; }
-                            .header h1 { margin: 0 0 4px; font-size: 22px; }
-                            .header .week { margin: 0; font-size: 13px; opacity: 0.8; }
-                            .header .total-label { margin: 16px 0 4px; font-size: 12px; opacity: 0.75; }
-                            .header .total { margin: 0; font-size: 36px; font-weight: bold; }
-                            table { width: 100%; border-collapse: collapse; font-size: 14px; }
-                            .total-row td { padding: 12px; font-weight: bold; font-size: 16px; border-top: 2px solid #e5e7eb; }
-                            .total-row td:last-child { text-align: right; color: #7c3aed; font-size: 18px; }
-                            .footer { margin-top: 32px; font-size: 11px; color: #aaa; text-align: center; }
-                            @media print { body { padding: 16px; } }
-                          </style></head><body>
-                            <div class="header">
-                              <p class="week">Weekly Payslip &nbsp;·&nbsp; ${weekLabel}</p>
-                              <h1>${child.name}</h1>
-                              <p class="total-label">Total Earned</p>
-                              <p class="total">${fmtAmt(total)}</p>
-                              ${conversionNote}
-                            </div>
-                            <table>${rows}
-                              <tr class="total-row"><td>Total</td><td>${fmtAmt(total)}</td></tr>
-                            </table>
-                            <p class="footer">Generated by ChoreChain &nbsp;·&nbsp; ${new Date().toLocaleDateString('en-NZ', {day:'numeric',month:'long',year:'numeric'})}</p>
-                          </body></html>`);
-                          printWindow.document.close();
-                          printWindow.focus();
-                          setTimeout(() => printWindow.print(), 400);
-                        }}
-                        className="w-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition flex items-center justify-center gap-2"
-                      >
-                        🖨️ Print Payslip
-                      </button>
-                      {/* CSV download */}
-                      <button
-                        onClick={() => {
-                          const ppd2 = pointsPerDollar();
-                          const pts2 = isPoints();
-                          const fmtCsv = (amt) => pts2 ? `${Math.round(parseFloat(amt||0) * ppd2)} pts` : `$${parseFloat(amt||0).toFixed(2)}`;
-                          const rows = [
-                            ['ChoreChain Weekly Payslip'],
-                            [`Child: ${child.name}`],
-                            [`Week: ${weekLabel}`],
-                            [`Reward Mode: ${pts2 ? `Points (${ppd2} pts = $1)` : 'Dollars'}`],
-                            [],
-                            ['Day', 'Chore', pts2 ? 'Points' : 'Amount', pts2 ? 'Value ($)' : ''],
-                            ...completedTasks.map(t => [
-                              t.dayOfWeek != null ? ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][t.dayOfWeek] : 'Other',
-                              t.title,
-                              fmtCsv(t.amount),
-                              pts2 ? `$${parseFloat(t.amount||0).toFixed(2)}` : ''
-                            ]),
-                            [],
-                            ['', 'Total', fmtCsv(total), pts2 ? `$${total.toFixed(2)}` : '']
-                          ];
-                          const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-                          const blob = new Blob([csv], { type: 'text/csv' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `payslip-${child.name.toLowerCase().replace(/\s+/g,'-')}-${weekLabel.replace(/[^a-z0-9]/gi,'-')}.csv`;
-                          a.click();
-                          URL.revokeObjectURL(url);
-                        }}
-                        className="w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition flex items-center justify-center gap-2"
-                      >
-                        📥 Download CSV
-                      </button>
-                      <button
-                        onClick={() => setPayslipChild(null)}
-                        className="w-full bg-gray-200 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-300 transition"
-                      >
-                        Close
-                      </button>
+                    <div className="space-y-2 mt-4">
+                      <button className="btn btn-secondary" onClick={() => {
+                        const printWindow = window.open('', '_blank');
+                        const ppd = pointsPerDollar(); const pts = isPoints();
+                        const fmtAmt = (amt) => pts ? `${Math.round(parseFloat(amt||0) * ppd)} pts` : `$${parseFloat(amt||0).toFixed(2)}`;
+                        const rows = completedTasks.length === 0
+                          ? '<tr><td colspan="2" style="text-align:center;color:#888;padding:16px;">No chores completed this week.</td></tr>'
+                          : sortedDayKeys.map(dayKey => {
+                              const dayLabel = dayKey === 'other' ? 'Other' : ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][Number(dayKey)];
+                              const dayRows = byDay[dayKey].map(t => `<tr><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;">✓ ${t.title}</td><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;color:#16a34a;font-weight:bold;">${fmtAmt(t.amount)}</td></tr>`).join('');
+                              return `<tr><td colspan="2" style="padding:10px 12px 4px;font-size:11px;font-weight:bold;color:#888;text-transform:uppercase;letter-spacing:0.05em;background:#f9f9f9;">${dayLabel}</td></tr>${dayRows}`;
+                            }).join('');
+                        const conversionNote = pts ? `<p style="font-size:12px;opacity:0.75;margin:4px 0 0;">${ppd} pts = $1.00 · Total value: $${total.toFixed(2)}</p>` : '';
+                        printWindow.document.write(`<!DOCTYPE html><html><head><title>Payslip – ${child.name}</title><style>body{font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:32px;color:#111}.header{background:linear-gradient(135deg,#c8ff47,#00e5c8);color:#0d0d14;border-radius:16px;padding:24px 28px;margin-bottom:24px}.header h1{margin:0 0 4px;font-size:22px}.header .week{margin:0;font-size:13px;opacity:0.7}.header .total-label{margin:16px 0 4px;font-size:12px;opacity:0.65}.header .total{margin:0;font-size:36px;font-weight:bold}table{width:100%;border-collapse:collapse;font-size:14px}.total-row td{padding:12px;font-weight:bold;font-size:16px;border-top:2px solid #e5e7eb}.total-row td:last-child{text-align:right;color:#0d0d14;font-size:18px}.footer{margin-top:32px;font-size:11px;color:#aaa;text-align:center}@media print{body{padding:16px}}</style></head><body><div class="header"><p class="week">Weekly Payslip · ${weekLabel}</p><h1>${child.name}</h1><p class="total-label">Total Earned</p><p class="total">${fmtAmt(total)}</p>${conversionNote}</div><table>${rows}<tr class="total-row"><td>Total</td><td>${fmtAmt(total)}</td></tr></table><p class="footer">Generated by ChoreChain · ${new Date().toLocaleDateString('en-NZ', {day:'numeric',month:'long',year:'numeric'})}</p></body></html>`);
+                        printWindow.document.close(); printWindow.focus(); setTimeout(() => printWindow.print(), 400);
+                      }}>🖨️ Print Payslip</button>
+                      <button className="btn btn-teal" onClick={() => {
+                        const ppd2 = pointsPerDollar(); const pts2 = isPoints();
+                        const fmtCsv = (amt) => pts2 ? `${Math.round(parseFloat(amt||0) * ppd2)} pts` : `$${parseFloat(amt||0).toFixed(2)}`;
+                        const rows = [['ChoreChain Weekly Payslip'],[`Child: ${child.name}`],[`Week: ${weekLabel}`],[`Reward Mode: ${pts2 ? `Points (${ppd2} pts = $1)` : 'Dollars'}`],[],['Day', 'Chore', pts2 ? 'Points' : 'Amount', pts2 ? 'Value ($)' : ''],...completedTasks.map(t => [t.dayOfWeek != null ? ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][t.dayOfWeek] : 'Other', t.title, fmtCsv(t.amount), pts2 ? `$${parseFloat(t.amount||0).toFixed(2)}` : '']),[], ['', 'Total', fmtCsv(total), pts2 ? `$${total.toFixed(2)}` : '']];
+                        const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+                        const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href = url; a.download = `payslip-${child.name.toLowerCase().replace(/\s+/g,'-')}-${weekLabel.replace(/[^a-z0-9]/gi,'-')}.csv`; a.click(); URL.revokeObjectURL(url);
+                      }}>📥 Download CSV</button>
+                      <button className="btn btn-secondary" onClick={() => setPayslipChild(null)}>Close</button>
                     </div>
                   </div>
                 </div>
@@ -1768,449 +1432,241 @@ const FamilyChoreApp = () => {
           })()}
 
           {/* Task Creation */}
-          <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 mb-8 border border-white/20">
-            <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Create Task</h2>
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Task title (e.g., Empty dishwasher)"
+          <div className="dash-section">
+            <p className="dash-section-title">{editingTemplate ? 'Edit Task' : 'Create Task'}</p>
+            <div className="space-y-3 mt-4">
+              <input type="text" placeholder="Task title (e.g., Empty dishwasher)"
                 value={editingTemplate ? editingTemplate.title : newTemplate.title}
                 onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, title: e.target.value}) : setNewTemplate({...newTemplate, title: e.target.value})}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50"
-              />
+                className="input" />
               <div>
-                <label className="block text-gray-700 font-bold mb-1">
-                  Amount <span className="text-green-600">(always entered in dollars $)</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">$</span>
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    step="0.50"
-                    min="0"
+                <label className="field-label">Amount <span style={{color:'var(--lime)',textTransform:'none',letterSpacing:'normal'}}>· always entered in dollars $</span></label>
+                <div className="input--prefix-wrap">
+                  <span className="input--prefix">$</span>
+                  <input type="number" placeholder="0.00" step="0.50" min="0"
                     value={editingTemplate ? editingTemplate.amount : newTemplate.amount}
                     onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, amount: e.target.value}) : setNewTemplate({...newTemplate, amount: e.target.value})}
-                    className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50"
-                  />
+                    className="input" />
                 </div>
-                {isPoints() && (
-                  <p className="text-xs text-indigo-500 mt-1">= {Math.round(parseFloat((editingTemplate ? editingTemplate.amount : newTemplate.amount) || 0) * pointsPerDollar())} pts at current rate ({pointsPerDollar()} pts/$1)</p>
-                )}
+                {isPoints() && <p className="text-xs text-muted mt-1">= {Math.round(parseFloat((editingTemplate ? editingTemplate.amount : newTemplate.amount) || 0) * pointsPerDollar())} pts at current rate ({pointsPerDollar()} pts/$1)</p>}
               </div>
-
               <div>
-                <p className="text-gray-700 font-bold mb-2">Frequency:</p>
+                <label className="field-label">Frequency</label>
                 <div className="space-y-2">
                   {['once', 'daily', 'weekly', 'specific'].map(freq => (
-                    <label key={freq} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="frequency"
-                        value={freq}
+                    <label key={freq} className="radio-label">
+                      <input type="radio" name="frequency" value={freq}
                         checked={(editingTemplate ? editingTemplate.frequency : newTemplate.frequency) === freq}
-                        onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, frequency: e.target.value}) : setNewTemplate({...newTemplate, frequency: e.target.value})}
-                        className="w-4 h-4 text-purple-600"
-                      />
-                      <span className="capitalize font-medium">{freq === 'specific' ? 'Specific Days' : freq}</span>
+                        onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, frequency: e.target.value}) : setNewTemplate({...newTemplate, frequency: e.target.value})} />
+                      <span style={{textTransform:'capitalize'}}>{freq === 'specific' ? 'Specific Days' : freq}</span>
                     </label>
                   ))}
                 </div>
               </div>
-
               {(editingTemplate ? editingTemplate.frequency : newTemplate.frequency) === 'weekly' && (
                 <div>
-                  <p className="text-gray-700 font-bold mb-2">Day of Week:</p>
-                  <select
+                  <label className="field-label">Day of Week</label>
+                  <select className="select"
                     value={editingTemplate ? editingTemplate.dayOfWeek : newTemplate.dayOfWeek}
-                    onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, dayOfWeek: parseInt(e.target.value)}) : setNewTemplate({...newTemplate, dayOfWeek: parseInt(e.target.value)})}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50"
-                  >
-                    {dayNames.map((day, idx) => (
-                      <option key={idx} value={idx}>{day}</option>
-                    ))}
+                    onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, dayOfWeek: parseInt(e.target.value)}) : setNewTemplate({...newTemplate, dayOfWeek: parseInt(e.target.value)})}>
+                    {dayNames.map((day, idx) => <option key={idx} value={idx}>{day}</option>)}
                   </select>
                 </div>
               )}
-
               {(editingTemplate ? editingTemplate.frequency : newTemplate.frequency) === 'specific' && (
                 <div>
-                  <p className="text-gray-700 font-bold mb-2">Select Days:</p>
-                  <div className="grid grid-cols-4 gap-2">
+                  <label className="field-label">Select Days</label>
+                  <div className="grid-4">
                     {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => {
-                          const days = editingTemplate ? editingTemplate.specificDays : newTemplate.specificDays;
-                          const newDays = days.includes(idx) ? days.filter(d => d !== idx) : [...days, idx];
-                          if (editingTemplate) {
-                            setEditingTemplate({...editingTemplate, specificDays: newDays});
-                          } else {
-                            setNewTemplate({...newTemplate, specificDays: newDays});
-                          }
-                        }}
-                        className={`py-2 rounded-lg font-bold transition ${
-                          (editingTemplate ? editingTemplate.specificDays : newTemplate.specificDays).includes(idx)
-                            ? 'bg-purple-500 text-white'
-                            : 'bg-gray-200 text-gray-700'
-                        }`}
-                      >
-                        {day}
-                      </button>
+                      <button key={idx} onClick={() => {
+                        const days = editingTemplate ? editingTemplate.specificDays : newTemplate.specificDays;
+                        const newDays = days.includes(idx) ? days.filter(d => d !== idx) : [...days, idx];
+                        editingTemplate ? setEditingTemplate({...editingTemplate, specificDays: newDays}) : setNewTemplate({...newTemplate, specificDays: newDays});
+                      }} className={(editingTemplate ? editingTemplate.specificDays : newTemplate.specificDays).includes(idx) ? 'day-pill day-pill--active' : 'day-pill'}>{day}</button>
                     ))}
                   </div>
                 </div>
               )}
-
               <div>
-                <p className="text-gray-700 font-bold mb-2">Assign To:</p>
-                <select
+                <label className="field-label">Assign To</label>
+                <select className="select"
                   value={editingTemplate ? editingTemplate.assignType : newTemplate.assignType}
-                  onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, assignType: e.target.value}) : setNewTemplate({...newTemplate, assignType: e.target.value})}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50"
-                >
+                  onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, assignType: e.target.value}) : setNewTemplate({...newTemplate, assignType: e.target.value})}>
                   <option value="any">Any Child (voluntary)</option>
                   <option value="assigned">Specific Child</option>
                   <option value="rotate">Rotate Between Children</option>
                 </select>
               </div>
-
               {(editingTemplate ? editingTemplate.assignType : newTemplate.assignType) === 'assigned' && (
-                <select
+                <select className="select"
                   value={editingTemplate ? (editingTemplate.assignedChild || '') : (newTemplate.assignedChild || '')}
-                  onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, assignedChild: e.target.value}) : setNewTemplate({...newTemplate, assignedChild: e.target.value})}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none bg-white/50"
-                >
+                  onChange={(e) => editingTemplate ? setEditingTemplate({...editingTemplate, assignedChild: e.target.value}) : setNewTemplate({...newTemplate, assignedChild: e.target.value})}>
                   <option value="">Select child</option>
-                  {familyData.children && Object.values(familyData.children).map(child => (
-                    <option key={child.id} value={child.id}>{child.name}</option>
-                  ))}
+                  {familyData.children && Object.values(familyData.children).map(child => <option key={child.id} value={child.id}>{child.name}</option>)}
                 </select>
               )}
-
               {(editingTemplate ? editingTemplate.assignType : newTemplate.assignType) === 'rotate' && (
                 <div>
-                  <p className="text-gray-700 font-bold mb-2">Children to Rotate:</p>
+                  <label className="field-label">Children to Rotate</label>
                   <div className="space-y-2">
                     {familyData.children && Object.values(familyData.children).map(child => (
-                      <label key={child.id} className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
+                      <label key={child.id} className="checkbox-label">
+                        <input type="checkbox"
                           checked={(editingTemplate ? editingTemplate.rotateChildren : newTemplate.rotateChildren).includes(child.id)}
                           onChange={(e) => {
                             const children = editingTemplate ? editingTemplate.rotateChildren : newTemplate.rotateChildren;
-                            const newChildren = e.target.checked
-                              ? [...children, child.id]
-                              : children.filter(id => id !== child.id);
-                            if (editingTemplate) {
-                              setEditingTemplate({...editingTemplate, rotateChildren: newChildren});
-                            } else {
-                              setNewTemplate({...newTemplate, rotateChildren: newChildren});
-                            }
-                          }}
-                          className="w-4 h-4 text-purple-600"
-                        />
-                        <span className="font-medium">{child.name}</span>
+                            const newChildren = e.target.checked ? [...children, child.id] : children.filter(id => id !== child.id);
+                            editingTemplate ? setEditingTemplate({...editingTemplate, rotateChildren: newChildren}) : setNewTemplate({...newTemplate, rotateChildren: newChildren});
+                          }} />
+                        {child.name}
                       </label>
                     ))}
                   </div>
                 </div>
               )}
-
-              {errorMsg && <p className="text-red-600 text-sm font-medium">{errorMsg}</p>}
-
-              <button
-                onClick={createTaskTemplate}
-                className="w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition flex items-center justify-center gap-2"
-              >
-                <Plus className="w-5 h-5" />
-                {editingTemplate ? 'Update Template' : 'Create Template'}
+              {errorMsg && <p className="error-msg">{errorMsg}</p>}
+              <button className="btn btn-primary" onClick={createTaskTemplate}>
+                <Plus size={18}/> {editingTemplate ? 'Update Template' : 'Create Template'}
               </button>
-              {editingTemplate && (
-                <button
-                  onClick={() => setEditingTemplate(null)}
-                  className="w-full bg-gray-300 text-gray-900 py-3 rounded-xl font-bold hover:bg-gray-400 transition"
-                >
-                  Cancel
-                </button>
-              )}
+              {editingTemplate && <button className="btn btn-secondary" onClick={() => setEditingTemplate(null)}>Cancel</button>}
             </div>
           </div>
 
           {/* Task Templates */}
-          <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 mb-8 border border-white/20">
-            <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Task Templates</h2>
-            <div className="space-y-3">
+          <div className="dash-section">
+            <p className="dash-section-title">Task Templates</p>
+            <div className="mt-4">
               {!familyData.taskTemplates || Object.keys(familyData.taskTemplates).length === 0 ? (
-                <p className="text-gray-500">No task templates yet</p>
-              ) : (
-                Object.values(familyData.taskTemplates).map(template => (
-                  <div key={template.id} className="border-2 border-purple-200 rounded-xl p-4 flex justify-between items-start bg-purple-50">
-                    <div className="flex-1">
-                      <p className="font-bold text-gray-900 text-lg">{template.title}</p>
-                      <p className="text-sm text-gray-600 capitalize mt-1">
-                        {template.frequency === 'once' && 'One time'}
-                        {template.frequency === 'daily' && 'Daily'}
-                        {template.frequency === 'weekly' && `Weekly on ${dayNames[template.dayOfWeek]}`}
-                        {template.frequency === 'specific' && 'Specific days'}
-                      </p>
-                      {template.assignType === 'assigned' && (
-                        <p className="text-sm text-gray-600">Assigned to: {familyData.children?.[template.assignedChild]?.name}</p>
-                      )}
-                      <p className="text-lg font-bold text-green-600 mt-2">{formatReward(template.amount)}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setEditingTemplate(template)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                      >
-                        <Edit2 className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => deleteTaskTemplate(template.id)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
+                <p className="text-muted text-sm">No task templates yet</p>
+              ) : Object.values(familyData.taskTemplates).map(template => (
+                <div key={template.id} className="template-item">
+                  <div className="flex-1">
+                    <p className="template-title">{template.title}</p>
+                    <p className="template-meta">
+                      {template.frequency === 'once' && 'One time'}
+                      {template.frequency === 'daily' && 'Daily'}
+                      {template.frequency === 'weekly' && `Weekly on ${dayNames[template.dayOfWeek]}`}
+                      {template.frequency === 'specific' && 'Specific days'}
+                      {template.assignType === 'assigned' && ` · ${familyData.children?.[template.assignedChild]?.name}`}
+                      {template.assignType === 'rotate' && ' · Rotating'}
+                      {template.assignType === 'any' && ' · Voluntary'}
+                    </p>
+                    <p className="template-reward">{formatReward(template.amount)}</p>
                   </div>
-                ))
-              )}
+                  <div className="template-actions">
+                    <button className="btn-icon btn-icon--edit" onClick={() => setEditingTemplate(template)}><Edit2 size={17}/></button>
+                    <button className="btn-icon btn-icon--danger" onClick={() => deleteTaskTemplate(template.id)}><Trash2 size={17}/></button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Children & Payout */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white/20">
-              <h2 className="text-2xl font-display font-bold text-gray-900 mb-4">Manage Children</h2>
-              <div className="space-y-3 mb-4">
+          {/* Children + Payout */}
+          <div className="grid-2-md mb-4">
+            <div className="dash-section" style={{margin:0}}>
+              <p className="dash-section-title">Manage Children</p>
+              <div className="mt-3">
                 {familyData.children && Object.values(familyData.children).map(child => (
-                  <div key={child.id} className="p-3 bg-gradient-to-r from-purple-100 to-indigo-100 rounded-lg border border-purple-200">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="font-bold text-gray-900">{child.name}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">{child.pin ? '🔒 PIN set' : '🔓 No PIN'}</p>
-                      </div>
-                      <button
-                        onClick={() => setManagingPinFor(child)}
-                        className="text-xs bg-purple-500 text-white px-3 py-1 rounded-lg font-bold hover:bg-purple-600 transition"
-                      >
-                        {child.pin ? 'Reset PIN' : 'Set PIN'}
-                      </button>
+                  <div key={child.id} className="child-item">
+                    <div>
+                      <p className="child-item-name">{child.name}</p>
+                      <p className="child-item-pin">{child.pin ? (child.pinHashed ? '🔒 PIN set' : '⚠️ Unhashed PIN') : '🔓 No PIN'}</p>
                     </div>
+                    <button className="btn btn-purple" style={{width:'auto',padding:'0.35rem 0.75rem',fontSize:'0.78rem'}} onClick={() => setManagingPinFor(child)}>
+                      {child.pin ? 'Reset PIN' : 'Set PIN'}
+                    </button>
                   </div>
                 ))}
               </div>
-
-              {/* Child PIN management modal */}
-              {managingPinFor && (
-                <ChildPinModal
-                  child={managingPinFor}
-                  onSave={saveChildPin}
-                  onClear={clearChildPin}
-                  onClose={() => setManagingPinFor(null)}
-                />
-              )}
-              <input
-                type="text"
-                placeholder="New child name"
-                value={childName}
-                onChange={(e) => setChildName(e.target.value)}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none mb-3 bg-white/50"
-              />
-              <button
-                onClick={addChildToFamily}
-                className="w-full bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600 transition font-bold"
-              >
-                Add Child
-              </button>
+              {managingPinFor && <ChildPinModal child={managingPinFor} onSave={saveChildPin} onClear={clearChildPin} onClose={() => setManagingPinFor(null)} />}
+              <input type="text" placeholder="New child name" value={childName} onChange={(e) => setChildName(e.target.value)} className="input mt-3 mb-2" />
+              <button className="btn btn-primary" onClick={addChildToFamily}>Add Child</button>
             </div>
 
-            <div className="bg-gradient-to-br from-green-100 to-emerald-100 rounded-3xl shadow-2xl p-8 border border-green-200">
-              <h2 className="text-2xl font-display font-bold text-gray-900 mb-2">Weekly Payout</h2>
-              <p className="text-gray-600 mb-4 font-light">Process earnings for all children</p>
-
-              {/* Reward Mode toggle */}
-              <div className="mb-4">
-                <p className="text-gray-700 font-bold text-sm mb-2">Reward Type</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {['dollars', 'points'].map(mode => (
-                    <button
-                      key={mode}
-                      onClick={() => saveRewardMode(mode)}
-                      className={`py-2 rounded-xl font-bold transition capitalize ${
-                        (familyData.rewardMode || 'dollars') === mode
-                          ? 'bg-green-500 text-white shadow'
-                          : 'bg-white text-gray-600 border-2 border-gray-200'
-                      }`}
-                    >
+            <div className="dash-section" style={{margin:0,background:'rgba(200,255,71,0.04)',borderColor:'rgba(200,255,71,0.12)'}}>
+              <p className="dash-section-title">Weekly Payout</p>
+              <p className="dash-section-sub">Process earnings for all children</p>
+              <div className="mb-3">
+                <label className="field-label">Reward Type</label>
+                <div className="reward-toggle">
+                  {['dollars','points'].map(mode => (
+                    <button key={mode} onClick={() => saveRewardMode(mode)} className={(familyData.rewardMode || 'dollars') === mode ? 'reward-btn reward-btn--active' : 'reward-btn'}>
                       {mode === 'dollars' ? '💵 Dollars' : '⭐ Points'}
                     </button>
                   ))}
                 </div>
               </div>
-
-              {/* Points conversion rate — only shown in points mode */}
               {isPoints() && (
-                <div className="mb-4 bg-white/60 rounded-xl p-3 border border-green-200">
-                  <p className="text-gray-700 font-bold text-sm mb-1">Points per $1</p>
-                  <input
-                    type="number"
-                    min="1"
-                    step="10"
-                    defaultValue={familyData.pointsPerDollar || 100}
-                    onBlur={(e) => savePointsPerDollar(e.target.value)}
-                    className="w-full px-3 py-2 border-2 border-green-200 rounded-lg focus:border-green-500 focus:outline-none bg-white font-bold text-gray-800"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    e.g. a $1 chore = {familyData.pointsPerDollar || 100} pts
-                  </p>
+                <div className="mb-3" style={{background:'var(--bg2)',borderRadius:'var(--radius-sm)',padding:'0.75rem',border:'1px solid var(--border)'}}>
+                  <label className="field-label">Points per $1</label>
+                  <input type="number" min="1" step="10" defaultValue={familyData.pointsPerDollar || 100}
+                    onBlur={(e) => savePointsPerDollar(e.target.value)} className="input" />
+                  <p className="text-xs text-muted mt-1">e.g. a $1 chore = {familyData.pointsPerDollar || 100} pts</p>
                 </div>
               )}
-
-              <div className="mb-4">
-                <p className="text-gray-700 font-bold text-sm mb-2">Payday</p>
-                <select
-                  value={familyData.payday != null ? familyData.payday : 5}
-                  onChange={(e) => savePayday(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 border-2 border-green-200 rounded-xl focus:border-green-500 focus:outline-none bg-white/70 font-medium text-gray-800"
-                >
-                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => (
-                    <option key={i} value={i}>{d}</option>
-                  ))}
+              <div className="mb-3">
+                <label className="field-label">Payday</label>
+                <select className="select" value={familyData.payday != null ? familyData.payday : 5} onChange={(e) => savePayday(parseInt(e.target.value))}>
+                  {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => <option key={i} value={i}>{d}</option>)}
                 </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Chore week: {(() => {
-                    const pd = familyData.payday != null ? familyData.payday : 5;
-                    const names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                    return `${names[(pd + 1) % 7]} → ${names[pd]}`;
-                  })()}
-                </p>
+                <p className="text-xs text-muted mt-1">Chore week: {(() => { const pd = familyData.payday != null ? familyData.payday : 5; const n = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; return `${n[(pd+1)%7]} → ${n[pd]}`; })()}</p>
               </div>
-              <button
-                onClick={processWeeklyPayout}
-                className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 rounded-xl font-bold hover:shadow-lg transition flex items-center justify-center gap-2"
-              >
-                <TrendingUp className="w-5 h-5" />
-                Process Payout
-              </button>
+              <button className="btn btn-primary" onClick={processWeeklyPayout}><TrendingUp size={18}/> Process Payout</button>
             </div>
+          </div>
 
-            {/* Security — Change PIN */}
-            <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-white/20">
-              <h2 className="text-2xl font-display font-bold text-gray-900 mb-2">Security</h2>
-              <p className="text-gray-600 font-light mb-4">Manage your parent PIN</p>
-
-              {/* Family code — shown only to parent behind PIN */}
-              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-6">
-                <p className="text-sm text-indigo-700 font-bold mb-1">Family Code</p>
-                <p className="font-mono text-2xl font-bold text-indigo-600 tracking-widest mb-2">{familyId}</p>
-                <p className="text-xs text-indigo-500 mb-3">Share this code with a second parent so they can join your family. Keep it private.</p>
-                <button
-                  onClick={() => {
-                    const link = `${window.location.origin}/join/${familyId}`;
-                    if (navigator.share) {
-                      navigator.share({ title: 'Join our family on ChoreChain', text: 'Use this link to join our ChoreChain family:', url: link });
-                    } else {
-                      navigator.clipboard.writeText(link);
-                      alert('Invite link copied to clipboard!');
-                    }
-                  }}
-                  className="w-full bg-indigo-500 text-white py-2 rounded-xl font-bold hover:bg-indigo-600 transition text-sm"
-                >
-                  🔗 Share Invite Link
-                </button>
+          {/* Security */}
+          <div className="dash-section mb-4">
+            <p className="dash-section-title">Security</p>
+            <p className="dash-section-sub">Manage your parent PIN and family access</p>
+            <div className="family-code-box">
+              <p className="family-code-label">Family Code</p>
+              <p className="family-code-value">{familyId}</p>
+              <p className="family-code-hint">Share this with a second parent so they can join your family. Keep it private.</p>
+              <button className="btn btn-teal" onClick={() => {
+                const link = `${window.location.origin}/join/${familyId}`;
+                if (navigator.share) { navigator.share({ title: 'Join our family on ChoreChain', url: link }); }
+                else { navigator.clipboard.writeText(link); alert('Invite link copied!'); }
+              }}>🔗 Share Invite Link</button>
+            </div>
+            {!changePinMode ? (
+              <button className="btn btn-secondary mb-3" onClick={() => setChangePinMode(true)}>🔑 Change PIN</button>
+            ) : (
+              <div className="space-y-3 mb-3">
+                <p className="text-sm text-muted text-center">Enter a new PIN (4–6 digits)</p>
+                <input type="password" inputMode="numeric" placeholder="New PIN" value={parentPin} maxLength="6"
+                  className="input input--pin"
+                  onChange={(e) => { const val = e.target.value.replace(/\D/g, '').slice(0, 6); setParentPin(val); setErrorMsg(''); }}
+                  autoFocus />
+                {errorMsg && <p className="error-msg text-center">{errorMsg}</p>}
+                <button className="btn btn-primary" onClick={async () => {
+                  if (parentPin.length < 4) { setErrorMsg('PIN must be at least 4 digits'); return; }
+                  try {
+                    const hashed = await hashPin(parentPin);
+                    await set(ref(database, `families/${familyId}/parentPin`), hashed);
+                    await set(ref(database, `families/${familyId}/pinHashed`), true);
+                    setParentPin(''); setChangePinMode(false); setErrorMsg('');
+                  } catch { setErrorMsg('Could not save PIN. Please try again.'); }
+                }}>Save New PIN</button>
+                <button className="btn btn-ghost w-full" onClick={() => { setChangePinMode(false); setParentPin(''); setErrorMsg(''); }}>Cancel</button>
               </div>
-              {!changePinMode ? (
-                <button
-                  onClick={() => setChangePinMode(true)}
-                  className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white py-3 rounded-xl font-bold hover:shadow-lg transition"
-                >
-                  🔑 Change PIN
-                </button>
+            )}
+            <div className="danger-zone">
+              <p className="danger-label">Danger Zone</p>
+              {!deleteAccountMode ? (
+                <button className="btn btn-danger" onClick={() => { setDeleteAccountMode(true); setDeleteAccountPassword(''); setDeleteAccountError(''); }}>🗑 Delete Account & All Data</button>
               ) : (
-                <div className="space-y-4">
-                  <p className="text-gray-700 text-sm font-medium text-center">Enter a new PIN (4–6 digits)</p>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    placeholder="New PIN"
-                    value={parentPin}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                      setParentPin(val);
-                      setErrorMsg('');
-                    }}
-                    maxLength="6"
-                    className="w-full px-4 py-4 border-2 border-gray-200 rounded-xl text-3xl text-center font-bold tracking-widest focus:border-purple-500 focus:outline-none bg-white/50 transition"
-                    autoFocus
-                  />
-                  {errorMsg && <p className="text-red-600 text-sm text-center">{errorMsg}</p>}
-                  <button
-                    onClick={async () => {
-                      if (parentPin.length < 4) { setErrorMsg('PIN must be at least 4 digits'); return; }
-                      try {
-                        const hashed = await hashPin(parentPin);
-                        await set(ref(database, `families/${familyId}/parentPin`), hashed);
-                        await set(ref(database, `families/${familyId}/pinHashed`), true);
-                        setParentPin('');
-                        setChangePinMode(false);
-                        setErrorMsg('');
-                      } catch (error) {
-                        setErrorMsg('Could not save PIN. Please try again.');
-                      }
-                    }}
-                    className="w-full bg-purple-500 text-white py-3 rounded-xl font-bold hover:bg-purple-600 transition"
-                  >
-                    Save New PIN
-                  </button>
-                  <button
-                    onClick={() => { setChangePinMode(false); setParentPin(''); setErrorMsg(''); }}
-                    className="w-full text-gray-500 font-bold hover:text-gray-700"
-                  >
-                    Cancel
-                  </button>
+                <div className="card--danger space-y-3">
+                  <p className="text-center text-sm" style={{color:'var(--red)',fontWeight:600}}>⚠️ This permanently deletes your account and all family data. Cannot be undone.</p>
+                  <input type="password" placeholder="Enter your password to confirm" value={deleteAccountPassword}
+                    onChange={(e) => { setDeleteAccountPassword(e.target.value); setDeleteAccountError(''); }}
+                    onKeyPress={(e) => e.key === 'Enter' && deleteAccount()} className="input" autoFocus />
+                  {deleteAccountError && <p className="error-msg">{deleteAccountError}</p>}
+                  <button className="btn btn-danger-solid" onClick={deleteAccount} disabled={loading}>{loading ? 'Deleting…' : 'Yes, Delete Everything'}</button>
+                  <button className="btn btn-ghost w-full" onClick={() => { setDeleteAccountMode(false); setDeleteAccountPassword(''); setDeleteAccountError(''); }}>Cancel</button>
                 </div>
               )}
-
-              <div className="border-t border-gray-200 pt-6 mt-2">
-                <p className="text-sm text-gray-500 mb-4">Danger Zone</p>
-                {!deleteAccountMode ? (
-                  <button
-                    onClick={() => { setDeleteAccountMode(true); setDeleteAccountPassword(''); setDeleteAccountError(''); }}
-                    className="w-full bg-red-50 border-2 border-red-200 text-red-600 py-3 rounded-xl font-bold hover:bg-red-100 transition"
-                  >
-                    🗑 Delete Account & All Data
-                  </button>
-                ) : (
-                  <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 space-y-3">
-                    <p className="text-red-800 font-bold text-sm text-center">⚠️ This permanently deletes your account and all family data. This cannot be undone.</p>
-                    <input
-                      type="password"
-                      placeholder="Enter your password to confirm"
-                      value={deleteAccountPassword}
-                      onChange={(e) => { setDeleteAccountPassword(e.target.value); setDeleteAccountError(''); }}
-                      onKeyPress={(e) => e.key === 'Enter' && deleteAccount()}
-                      className="w-full px-4 py-3 border-2 border-red-200 rounded-xl focus:border-red-500 focus:outline-none bg-white transition"
-                      autoFocus
-                    />
-                    {deleteAccountError && <p className="text-red-600 text-sm text-center font-medium">{deleteAccountError}</p>}
-                    <button
-                      onClick={deleteAccount}
-                      disabled={loading}
-                      className="w-full bg-red-500 text-white py-3 rounded-xl font-bold hover:bg-red-600 transition disabled:opacity-50"
-                    >
-                      {loading ? 'Deleting...' : 'Yes, Delete Everything'}
-                    </button>
-                    <button
-                      onClick={() => { setDeleteAccountMode(false); setDeleteAccountPassword(''); setDeleteAccountError(''); }}
-                      className="w-full text-gray-500 font-bold hover:text-gray-700 text-sm"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </div>
@@ -2250,98 +1706,71 @@ const FamilyChoreApp = () => {
     const dayOrder = Array.from({length: 7}, (_, i) => (weekStartDay + i) % 7);
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="flex justify-between items-center mb-8 mt-6">
+      <div className="screen">
+        <div className="container-md">
+          <div className="child-header">
             <div>
-              <h1 className="text-3xl font-display font-bold text-gray-900">Hi, {childData?.name}! 👋</h1>
-              <p className="text-gray-600 font-light">{familyData.name}</p>
+              <p className="child-greeting">Hi, {childData?.name}! 👋</p>
+              <p className="child-family-name">{familyData.name}</p>
             </div>
-            <button
-              onClick={() => { setScreen('family-home'); setChildPayslip(false); }}
-              className="flex items-center gap-2 bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition font-bold"
-            >
-              ← Back
-            </button>
+            <button className="btn btn-back" onClick={() => { setScreen('family-home'); setChildPayslip(false); }}>← Back</button>
           </div>
 
-          {/* Earnings Card */}
+          {/* Earnings Hero Card */}
           {(() => {
-            // Potential = all assigned/accepted tasks not yet completed + already completed
             const potentialEarnings = familyData.childTasks ? Object.values(familyData.childTasks).reduce((sum, task) => {
-              const isForThisChild = task.assignType === 'any'
-                ? (task.accepted?.includes(currentChildId) || false)
-                : task.assignedChild === currentChildId;
+              const isForThisChild = task.assignType === 'any' ? (task.accepted?.includes(currentChildId) || false) : task.assignedChild === currentChildId;
               if (isForThisChild) sum += parseFloat(task.amount || 0);
               return sum;
             }, 0) : 0;
             const pct = potentialEarnings > 0 ? Math.min((childEarnings / potentialEarnings) * 100, 100) : 0;
             return (
-              <div className="bg-gradient-to-br from-green-400 via-emerald-400 to-teal-400 rounded-3xl shadow-2xl p-8 mb-8 text-white">
-                <p className="text-sm font-light opacity-90 mb-2">This Week's {isPoints() ? 'Points' : 'Earnings'}</p>
-                <div className="flex items-baseline gap-2 mb-1">
-                  <span className="text-6xl font-bold">{formatReward(childEarnings)}</span>
+              <div className="earnings-hero">
+                <p className="earnings-hero-label">This Week's {isPoints() ? 'Points' : 'Earnings'}</p>
+                <p className="earnings-hero-value">{formatReward(childEarnings)}</p>
+                <p className="earnings-hero-potential">of {formatReward(potentialEarnings)} potential{isPoints() && ` ($${potentialEarnings.toFixed(2)})`}</p>
+                <div className="earnings-progress-track">
+                  <div className="earnings-progress-fill" style={{width:`${pct}%`}}></div>
                 </div>
-                <p className="text-sm font-light opacity-75 mb-5">of {formatReward(potentialEarnings)} potential{isPoints() && ` ($${potentialEarnings.toFixed(2)})`}</p>
-                <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4">
-                  <div className="w-full bg-white/30 rounded-full h-3 overflow-hidden mb-2">
-                    <div
-                      className="bg-white h-full rounded-full transition-all duration-300"
-                      style={{width: `${pct}%`}}
-                    ></div>
-                  </div>
-                  <p className="text-sm font-light opacity-90">{pct === 100 ? '🎉 All done!' : `${Math.round(pct)}% of potential earned`}</p>
-                </div>
-                <button
-                  onClick={() => setChildPayslip(true)}
-                  className="mt-4 w-full bg-white/20 hover:bg-white/30 text-white font-bold py-2 rounded-xl transition text-sm"
-                >
-                  📄 View My Payslip
-                </button>
+                <p className="earnings-progress-label">{pct === 100 ? '🎉 All done!' : `${Math.round(pct)}% of potential earned`}</p>
+                <button className="earnings-hero-payslip-btn" onClick={() => setChildPayslip(true)}>📄 View My Payslip</button>
               </div>
             );
           })()}
 
           {/* Child Payslip Modal */}
           {childPayslip && (() => {
-            const completedTasks = familyData.childTasks
-              ? Object.values(familyData.childTasks).filter(t => t.completed?.includes(currentChildId))
-              : [];
+            const completedTasks = familyData.childTasks ? Object.values(familyData.childTasks).filter(t => t.completed?.includes(currentChildId)) : [];
             const total = completedTasks.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
             return (
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-                  <div className="sticky top-0 z-10 flex justify-between items-center px-6 pt-4 pb-2 bg-white rounded-t-3xl">
-                    <button onClick={() => setChildPayslip(false)} className="text-purple-600 font-bold flex items-center gap-1">← Back</button>
+              <div className="modal-overlay">
+                <div className="modal-sheet">
+                  <div className="modal-sticky-top">
+                    <button className="btn-ghost" onClick={() => setChildPayslip(false)}>← Back</button>
                   </div>
-                  <div className="bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 mx-4 rounded-2xl p-6 text-white mb-4">
-                    <p className="text-sm opacity-80 mb-1">My Weekly Payslip</p>
-                    <h2 className="text-2xl font-bold">{childData?.name}</h2>
-                    <div className="mt-3 bg-white/20 rounded-xl p-3">
-                      <p className="text-sm opacity-80">Total Earned</p>
-                      <p className="text-3xl font-bold">{formatReward(total)}</p>
-                      {isPoints() && <p className="text-xs opacity-75 mt-1">= ${total.toFixed(2)}</p>}
+                  <div className="payslip-header">
+                    <p className="payslip-header-sub">My Weekly Payslip</p>
+                    <p className="payslip-header-name">{childData?.name}</p>
+                    <div className="payslip-total-box">
+                      <p className="payslip-total-label">Total Earned</p>
+                      <p className="payslip-total-value">{formatReward(total)}</p>
+                      {isPoints() && <p style={{fontSize:'0.75rem',opacity:0.7}}>= ${total.toFixed(2)}</p>}
                     </div>
                   </div>
-                  <div className="px-6 pb-6 space-y-2">
-                    {completedTasks.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No chores completed yet this week.</p>
-                    ) : completedTasks.map(task => (
-                      <div key={task.id} className="flex justify-between items-center py-2 border-b border-gray-100">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                          <span className="text-gray-800 font-medium">{task.title}</span>
-                        </div>
-                        <span className="text-green-600 font-bold">{formatReward(task.amount)}</span>
-                      </div>
-                    ))}
+                  <div className="payslip-body">
+                    {completedTasks.length === 0
+                      ? <p className="text-center text-muted text-sm" style={{padding:'1rem 0'}}>No chores completed yet this week.</p>
+                      : completedTasks.map(task => (
+                          <div key={task.id} className="payslip-row">
+                            <span className="payslip-row-title"><CheckCircle2 size={14} style={{color:'var(--lime)',flexShrink:0}}/>{task.title}</span>
+                            <span className="payslip-row-amount">{formatReward(task.amount)}</span>
+                          </div>
+                        ))
+                    }
                     {completedTasks.length > 0 && (
-                      <div className="flex justify-between items-center pt-3 border-t-2 border-gray-200">
-                        <span className="font-bold text-gray-900">Total</span>
-                        <span className="text-xl font-bold text-purple-600">{formatReward(total)}</span>
-                      </div>
+                      <div className="payslip-total-row"><span>Total</span><span>{formatReward(total)}</span></div>
                     )}
-                    <button onClick={() => setChildPayslip(false)} className="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-200 transition mt-4">Close</button>
+                    <button className="btn btn-secondary mt-4" onClick={() => setChildPayslip(false)}>Close</button>
                   </div>
                 </div>
               </div>
@@ -2350,102 +1779,57 @@ const FamilyChoreApp = () => {
 
           {/* Tasks by Day */}
           {childTasks.length === 0 ? (
-            <div className="bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl p-8 text-center border border-white/20">
-              <Calendar className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-600 font-medium">No tasks available</p>
-              <p className="text-gray-500 text-sm mt-2">Ask your parents to create some!</p>
+            <div className="empty-state">
+              <p className="empty-state-icon">📋</p>
+              <p className="empty-state-title">No tasks available</p>
+              <p className="empty-state-sub">Ask your parents to create some!</p>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div>
               {dayOrder.map(dayIdx => {
                 const dayTasks = tasksByDay[dayIdx];
                 if (dayTasks.length === 0) return null;
-
                 return (
                   <div key={dayIdx}>
-                    <h2 className="text-lg font-display font-bold text-gray-900 mb-3 flex items-center gap-2">
-                      <Calendar className="w-5 h-5 text-purple-600" />
-                      {dayNames[dayIdx]}
-                    </h2>
-                    <div className="space-y-3">
-                      {dayTasks.map(task => {
-                        const isAccepted = task.accepted?.includes(currentChildId);
-                        const isCompleted = task.completed?.includes(currentChildId);
-                        const isAssigned = task.assignType === 'assigned';
-
-                        return (
-                          <div 
-                            key={task.id} 
-                            className={`rounded-2xl shadow-lg p-6 transition ${
-                              isCompleted 
-                                ? 'bg-green-100 border-2 border-green-300' 
-                                : isAccepted
-                                ? 'bg-white/70 backdrop-blur-xl border-2 border-purple-200'
-                                : 'bg-white/70 backdrop-blur-xl border-2 border-gray-200'
-                            }`}
-                          >
-                            <div className="flex justify-between items-start gap-4">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-3 mb-2">
-                                  {isCompleted && <CheckCircle2 className="w-6 h-6 text-green-600 flex-shrink-0" />}
-                                  <h3 className={`text-lg font-bold ${isCompleted ? 'text-green-600 line-through' : 'text-gray-900'}`}>
-                                    {task.title}
-                                  </h3>
-                                  {isAssigned && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">Assigned</span>}
-                                </div>
-                                <div className="flex items-center gap-4 ml-9">
-                                  <div className="flex items-center gap-1 text-green-600 font-bold">
-                                    {isPoints()
-                                      ? <Star className="w-5 h-5" />
-                                      : <DollarSign className="w-5 h-5" />
-                                    }
-                                    {formatReward(task.amount)}
-                                  </div>
-                                </div>
+                    <div className="day-heading">
+                      <Calendar size={14}/> {dayNames[dayIdx]}
+                    </div>
+                    {dayTasks.map(task => {
+                      const isAccepted = task.accepted?.includes(currentChildId);
+                      const isCompleted = task.completed?.includes(currentChildId);
+                      const isAssigned = task.assignType === 'assigned';
+                      return (
+                        <div key={task.id} className={isCompleted ? 'task-card task-card--done' : isAccepted ? 'task-card task-card--accepted' : 'task-card'}>
+                          <div className="task-card-inner">
+                            <div className="task-card-left">
+                              <div className="task-card-title-row">
+                                {isCompleted && <CheckCircle2 size={18} style={{color:'var(--lime)',flexShrink:0}}/>}
+                                <span className={isCompleted ? 'task-card-title task-card-title--done' : 'task-card-title'}>{task.title}</span>
+                                {isAssigned && <span className="tag tag--teal">Assigned</span>}
                               </div>
-                              <div className="flex gap-2">
-                                {/* Accept: voluntary only, not yet accepted/completed */}
-                                {task.assignType === 'any' && !isAccepted && !isCompleted && (
-                                  <button
-                                    onClick={() => acceptTask(task.id)}
-                                    className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-lg font-bold hover:shadow-lg transition whitespace-nowrap text-sm"
-                                  >
-                                    Accept
-                                  </button>
-                                )}
-                                {/* Done button: assigned tasks always show it; voluntary shows after accepting */}
-                                {(isAssigned || (task.assignType === 'any' && isAccepted)) && !isCompleted && (
-                                  <button
-                                    onClick={() => completeTask(task.id)}
-                                    className="bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-2 rounded-lg font-bold hover:shadow-lg transition whitespace-nowrap text-sm"
-                                  >
-                                    Done
-                                  </button>
-                                )}
-                                {/* Completed: show Undo button */}
-                                {isCompleted && (
-                                  <button
-                                    onClick={() => unselectTask(task.id)}
-                                    className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700 transition whitespace-nowrap text-sm flex items-center gap-1"
-                                  >
-                                    ✓ Undo
-                                  </button>
-                                )}
-                                {/* Un-accept: voluntary, accepted but not completed */}
-                                {task.assignType === 'any' && isAccepted && !isCompleted && (
-                                  <button
-                                    onClick={() => unselectTask(task.id)}
-                                    className="bg-gray-300 text-gray-900 px-3 py-2 rounded-lg font-bold hover:bg-gray-400 transition whitespace-nowrap text-sm flex items-center gap-1"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                )}
+                              <div className="task-card-reward">
+                                {isPoints() ? <Star size={15}/> : <DollarSign size={15}/>}
+                                {formatReward(task.amount)}
                               </div>
                             </div>
+                            <div className="task-card-actions">
+                              {task.assignType === 'any' && !isAccepted && !isCompleted && (
+                                <button className="task-btn-accept" onClick={() => acceptTask(task.id)}>Accept</button>
+                              )}
+                              {(isAssigned || (task.assignType === 'any' && isAccepted)) && !isCompleted && (
+                                <button className="task-btn-done" onClick={() => completeTask(task.id)}>Done</button>
+                              )}
+                              {isCompleted && (
+                                <button className="task-btn-undo" onClick={() => unselectTask(task.id)}>✓ Undo</button>
+                              )}
+                              {task.assignType === 'any' && isAccepted && !isCompleted && (
+                                <button className="task-btn-unaccept" onClick={() => unselectTask(task.id)}><X size={14}/></button>
+                              )}
+                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -2459,160 +1843,118 @@ const FamilyChoreApp = () => {
   // ADMIN SCREEN — only visible to admin UID
   if (screen === 'admin' && currentUser?.uid === ADMIN_UID) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 p-4">
-        <div className="max-w-2xl mx-auto pt-8">
-          <div className="flex justify-between items-center mb-8">
+      <div className="screen admin-screen">
+        <div className="container-md">
+          <div className="admin-header">
             <div>
-              <h1 className="text-3xl font-display font-bold text-white">⚙️ Admin Panel</h1>
-              <p className="text-gray-400 text-sm">ChoreChain v{APP_VERSION}</p>
+              <p className="admin-title">⚙️ Admin Panel</p>
+              <p className="admin-sub">ChoreChain v{APP_VERSION}</p>
             </div>
-            <button
-              onClick={() => { setScreen('family-home'); setAdminData(null); }}
-              className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition font-bold"
-            >
-              ← Back
-            </button>
+            <button className="btn btn-back" onClick={() => { setScreen('family-home'); setAdminData(null); }}>← Back</button>
           </div>
 
           {!adminData ? (
-            <div className="text-center py-16">
-              <button
-                onClick={loadAdminData}
-                disabled={adminLoading}
-                className="bg-purple-500 text-white px-8 py-4 rounded-2xl font-bold text-lg hover:bg-purple-600 transition disabled:opacity-50"
-              >
-                {adminLoading ? 'Loading...' : 'Load All Families'}
+            <div className="text-center" style={{paddingTop:'4rem'}}>
+              <button className="btn btn-primary" style={{width:'auto',padding:'1rem 2.5rem',fontSize:'1.05rem'}}
+                onClick={loadAdminData} disabled={adminLoading}>
+                {adminLoading ? 'Loading…' : 'Load All Families'}
               </button>
             </div>
           ) : (
-            <div className="space-y-4">
-              <p className="text-gray-400 text-sm">{adminData.length} families in database</p>
+            <div>
+              <p className="admin-count">{adminData.length} families in database</p>
               {adminData.sort((a, b) => (a.createdAt > b.createdAt ? -1 : 1)).map(family => {
                 const isOwn = family.familyId === familyId;
                 const isExpanded = expandedFamily === family.familyId;
                 const emails = Object.values(family.members).map(m => m.email).join(', ');
-                const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const adminDayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
                 const taskTemplates = Object.values(family.taskTemplates);
-                const childTasks = Object.values(family.childTasks);
+                const childTasksList = Object.values(family.childTasks);
                 const children = Object.values(family.children);
                 return (
-                  <div key={family.familyId} className={`rounded-2xl border ${isOwn ? 'bg-purple-900/40 border-purple-500' : 'bg-gray-800 border-gray-700'}`}>
-                    {/* Header row */}
-                    <div className="flex justify-between items-start gap-4 p-5">
-                      <button className="flex-1 min-w-0 text-left" onClick={() => setExpandedFamily(isExpanded ? null : family.familyId)}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="text-white font-bold text-lg">{family.name}</p>
-                          {isOwn && <span className="text-xs bg-purple-500 text-white px-2 py-0.5 rounded font-bold">You</span>}
-                          <span className="text-gray-500 text-xs ml-auto">{isExpanded ? '▲' : '▼'}</span>
-                        </div>
-                        <p className="text-gray-400 text-xs font-mono mb-1">{family.familyId}</p>
-                        <p className="text-gray-300 text-sm truncate">{emails}</p>
-                        <p className="text-gray-500 text-xs mt-1">
-                          {family.memberCount} parent{family.memberCount !== 1 ? 's' : ''} · {family.childCount} child{family.childCount !== 1 ? 'ren' : ''} · {family.createdAt ? new Date(family.createdAt).toLocaleDateString('en-NZ') : 'unknown date'}
+                  <div key={family.familyId} className={isOwn ? 'admin-family-card admin-family-card--own' : 'admin-family-card'}>
+                    <div className="admin-family-card-header">
+                      <button style={{flex:1,textAlign:'left',background:'none',border:'none',cursor:'pointer',color:'inherit',padding:0}}
+                        onClick={() => setExpandedFamily(isExpanded ? null : family.familyId)}>
+                        <p className="admin-family-name">
+                          {family.name}
+                          {isOwn && <span className="tag tag--muted" style={{fontSize:'0.65rem'}}>You</span>}
+                          <span className="admin-chevron">{isExpanded ? '▲' : '▼'}</span>
+                        </p>
+                        <p className="admin-family-code">{family.familyId}</p>
+                        <p className="admin-family-email">{emails}</p>
+                        <p className="admin-family-meta">
+                          {family.memberCount} parent{family.memberCount !== 1 ? 's' : ''} · {family.childCount} child{family.childCount !== 1 ? 'ren' : ''} · {family.createdAt ? new Date(family.createdAt).toLocaleDateString('en-NZ') : 'unknown'}
                         </p>
                       </button>
                       {!isOwn && (
                         deletingFamily === family.familyId ? (
-                          <div className="flex flex-col gap-2 flex-shrink-0">
-                            <p className="text-red-400 text-xs text-center font-bold">Confirm?</p>
-                            <button onClick={() => adminDeleteFamily(family.familyId, family.uids)} className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-red-600 transition text-sm">Yes</button>
-                            <button onClick={() => setDeletingFamily(null)} className="bg-gray-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-gray-500 transition text-sm">No</button>
+                          <div className="admin-delete-wrap">
+                            <p className="text-xs text-center" style={{color:'var(--red)',fontWeight:700}}>Confirm?</p>
+                            <button className="btn btn-danger-solid" style={{width:'auto',padding:'0.4rem 0.9rem',fontSize:'0.8rem'}} onClick={() => adminDeleteFamily(family.familyId, family.uids)}>Yes</button>
+                            <button className="btn btn-secondary" style={{width:'auto',padding:'0.4rem 0.9rem',fontSize:'0.8rem'}} onClick={() => setDeletingFamily(null)}>No</button>
                           </div>
                         ) : (
-                          <button onClick={() => setDeletingFamily(family.familyId)} className="bg-red-900/50 border border-red-700 text-red-400 px-4 py-2 rounded-lg font-bold hover:bg-red-800/50 transition text-sm flex-shrink-0">
-                            🗑
-                          </button>
+                          <button className="btn-icon btn-icon--danger" style={{fontSize:'1rem'}} onClick={() => setDeletingFamily(family.familyId)}>🗑</button>
                         )
                       )}
                     </div>
 
-                    {/* Expanded detail */}
                     {isExpanded && (
-                      <div className="border-t border-gray-700 px-5 pb-5 pt-4 space-y-5">
-
-                        {/* Settings */}
-                        <div>
-                          <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Settings</p>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="bg-gray-700/50 rounded-xl p-3 text-center">
-                              <p className="text-gray-400 text-xs mb-1">Reward</p>
-                              <p className="text-white font-bold text-sm capitalize">{family.rewardMode}</p>
-                            </div>
-                            <div className="bg-gray-700/50 rounded-xl p-3 text-center">
-                              <p className="text-gray-400 text-xs mb-1">Payday</p>
-                              <p className="text-white font-bold text-sm">{dayNames[family.payday]}</p>
-                            </div>
-                            <div className="bg-gray-700/50 rounded-xl p-3 text-center">
-                              <p className="text-gray-400 text-xs mb-1">Parent PIN</p>
-                              <p className="text-white font-bold text-sm">{family.parentPin} {family.pinHashed ? '🔒' : '⚠️'}</p>
-                            </div>
+                      <div className="admin-family-detail">
+                        <div className="admin-detail-section">
+                          <p className="admin-detail-label">Settings</p>
+                          <div className="admin-detail-grid">
+                            <div className="admin-stat-box"><p className="admin-stat-label">Reward</p><p className="admin-stat-value" style={{textTransform:'capitalize'}}>{family.rewardMode}</p></div>
+                            <div className="admin-stat-box"><p className="admin-stat-label">Payday</p><p className="admin-stat-value">{adminDayNames[family.payday]}</p></div>
+                            <div className="admin-stat-box"><p className="admin-stat-label">PIN</p><p className="admin-stat-value">{family.parentPin} {family.pinHashed ? '🔒' : '⚠️'}</p></div>
                           </div>
                         </div>
 
-                        {/* Children */}
                         {children.length > 0 && (
-                          <div>
-                            <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Children</p>
-                            <div className="space-y-1">
-                              {children.map(child => (
-                                <div key={child.id} className="flex justify-between items-center bg-gray-700/50 rounded-lg px-3 py-2">
-                                  <p className="text-white font-medium">{child.name}</p>
-                                  <p className="text-gray-400 text-xs">{child.pin ? (child.pinHashed ? '🔒 PIN set' : '⚠️ unhashed PIN') : 'No PIN'}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Task templates */}
-                        {taskTemplates.length > 0 && (
-                          <div>
-                            <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Task Templates ({taskTemplates.length})</p>
-                            <div className="space-y-1">
-                              {taskTemplates.map(t => (
-                                <div key={t.id} className="flex justify-between items-center bg-gray-700/50 rounded-lg px-3 py-2">
-                                  <p className="text-white text-sm font-medium">{t.title}</p>
-                                  <p className="text-gray-400 text-xs">${parseFloat(t.amount||0).toFixed(2)} · {t.frequency} · {t.assignType}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* This week's tasks summary */}
-                        {childTasks.length > 0 && (
-                          <div>
-                            <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">This Week ({childTasks.length} tasks)</p>
-                            <div className="grid grid-cols-3 gap-2">
-                              <div className="bg-gray-700/50 rounded-xl p-3 text-center">
-                                <p className="text-gray-400 text-xs mb-1">Total</p>
-                                <p className="text-white font-bold">{childTasks.length}</p>
-                              </div>
-                              <div className="bg-gray-700/50 rounded-xl p-3 text-center">
-                                <p className="text-gray-400 text-xs mb-1">Completed</p>
-                                <p className="text-green-400 font-bold">{childTasks.filter(t => t.completed?.length > 0).length}</p>
-                              </div>
-                              <div className="bg-gray-700/50 rounded-xl p-3 text-center">
-                                <p className="text-gray-400 text-xs mb-1">Pending</p>
-                                <p className="text-yellow-400 font-bold">{childTasks.filter(t => !t.completed?.length).length}</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Members detail */}
-                        <div>
-                          <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Parent Accounts</p>
-                          <div className="space-y-1">
-                            {Object.entries(family.members).map(([uid, m]) => (
-                              <div key={uid} className="bg-gray-700/50 rounded-lg px-3 py-2">
-                                <p className="text-white text-sm font-medium">{m.email}</p>
-                                <p className="text-gray-500 text-xs font-mono">{uid}</p>
+                          <div className="admin-detail-section">
+                            <p className="admin-detail-label">Children</p>
+                            {children.map(child => (
+                              <div key={child.id} className="admin-detail-item flex justify-between items-center">
+                                <span style={{fontWeight:600}}>{child.name}</span>
+                                <span className="text-xs text-muted">{child.pin ? (child.pinHashed ? '🔒 PIN set' : '⚠️ unhashed') : 'No PIN'}</span>
                               </div>
                             ))}
                           </div>
-                        </div>
+                        )}
 
+                        {taskTemplates.length > 0 && (
+                          <div className="admin-detail-section">
+                            <p className="admin-detail-label">Task Templates ({taskTemplates.length})</p>
+                            {taskTemplates.map(t => (
+                              <div key={t.id} className="admin-detail-item flex justify-between items-center">
+                                <span style={{fontWeight:600,fontSize:'0.85rem'}}>{t.title}</span>
+                                <span className="text-xs text-muted">${parseFloat(t.amount||0).toFixed(2)} · {t.frequency} · {t.assignType}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {childTasksList.length > 0 && (
+                          <div className="admin-detail-section">
+                            <p className="admin-detail-label">This Week ({childTasksList.length} tasks)</p>
+                            <div className="admin-detail-grid">
+                              <div className="admin-stat-box"><p className="admin-stat-label">Total</p><p className="admin-stat-value">{childTasksList.length}</p></div>
+                              <div className="admin-stat-box"><p className="admin-stat-label">Done</p><p className="admin-stat-value" style={{color:'var(--lime)'}}>{childTasksList.filter(t => t.completed?.length > 0).length}</p></div>
+                              <div className="admin-stat-box"><p className="admin-stat-label">Pending</p><p className="admin-stat-value" style={{color:'var(--yellow)'}}>{childTasksList.filter(t => !t.completed?.length).length}</p></div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="admin-detail-section">
+                          <p className="admin-detail-label">Parent Accounts</p>
+                          {Object.entries(family.members).map(([uid, m]) => (
+                            <div key={uid} className="admin-detail-item">
+                              <p style={{fontWeight:600,fontSize:'0.875rem'}}>{m.email}</p>
+                              <p className="admin-detail-uid">{uid}</p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2626,11 +1968,10 @@ const FamilyChoreApp = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">Loading ChoreChain...</h1>
-        <p className="text-gray-600">Please wait...</p>
-      </div>
+    <div className="loading-screen">
+      <MascotSVG style={{width:80,height:80,filter:'drop-shadow(0 0 20px rgba(200,255,71,0.4))'}}/>
+      <p className="loading-title">Loading ChoreChain…</p>
+      <p className="loading-sub">Please wait</p>
     </div>
   );
 };
