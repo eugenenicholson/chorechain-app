@@ -265,7 +265,6 @@ const FamilyChoreApp = () => {
             if (snap.exists()) {
               const data = snap.val();
               setFamilyData(data);
-              generateWeeklyTasks(fid, data);
             }
           });
           setScreen('family-home');
@@ -339,7 +338,6 @@ const FamilyChoreApp = () => {
         if (snap.exists()) {
           const data = snap.val();
           setFamilyData(data);
-          generateWeeklyTasks(newFamilyId, data);
         }
       });
 
@@ -492,7 +490,6 @@ const FamilyChoreApp = () => {
         if (s.exists()) {
           const data = s.val();
           setFamilyData(data);
-          generateWeeklyTasks(code, data);
         }
       });
       setScreen('family-home');
