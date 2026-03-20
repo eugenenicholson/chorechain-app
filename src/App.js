@@ -5,7 +5,7 @@ import { Plus, DollarSign, Star, Edit2, Trash2, Calendar, LogOut, CheckCircle2, 
 // Firebase imports
 import { initializeApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, deleteUser, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
-import { getDatabase, ref, set, get, remove, onValue } from 'firebase/database';
+import { getDatabase, ref, set, get, remove, onValue, update } from 'firebase/database';
 
 // Firebase configuration — values loaded from .env (never hardcode secrets in source)
 const firebaseConfig = {
@@ -773,9 +773,32 @@ const FamilyChoreApp = () => {
       }
     });
 
-    // Write merged tasks (updates template changes, preserves progress, no duplicates)
+    // Write tasks — only write new tasks, never overwrite ones with existing progress
+    // Use individual set() calls for new tasks only, preserving any completed/accepted state
     const tasksRef = ref(database, `families/${fid}/childTasks`);
-    await set(tasksRef, newTasks);
+
+    // Only write tasks that don't already exist in the database, or exist but have no progress
+    const writePromises = Object.entries(newTasks).map(async ([taskId, task]) => {
+      const existingTask = existingTasks[taskId];
+      // If task already exists with any completed or accepted entries, don't touch it
+      if (existingTask) {
+        const hasCompleted = toArray(existingTask.completed).length > 0;
+        const hasAccepted = toArray(existingTask.accepted).length > 0;
+        if (hasCompleted || hasAccepted) return; // preserve progress, skip write
+      }
+      // New task or task with no progress — safe to write
+      await set(ref(database, `families/${fid}/childTasks/${taskId}`), task);
+    });
+
+    await Promise.all(writePromises);
+
+    // Remove tasks from previous weeks (different weekKey) that no longer have a template
+    const validTaskIds = new Set(Object.keys(newTasks));
+    const removePromises = Object.keys(existingTasks)
+      .filter(taskId => !validTaskIds.has(taskId) && existingTasks[taskId].weekKey !== weekKey)
+      .map(taskId => remove(ref(database, `families/${fid}/childTasks/${taskId}`)));
+    await Promise.all(removePromises);
+
     await set(ref(database, `families/${fid}/lastGeneratedWeek`), weekKey);
   };
 
@@ -799,7 +822,7 @@ const FamilyChoreApp = () => {
       const task = snapshot.val() || {};
       const accepted = Array.isArray(task.accepted) ? task.accepted : Object.values(task.accepted || {});
       if (!accepted.includes(currentChildId)) {
-        await set(taskRef, { ...task, accepted: [...accepted, currentChildId] });
+        await update(taskRef, { accepted: [...accepted, currentChildId] });
       }
     } catch (error) {
       setErrorMsg(error.message);
@@ -814,7 +837,7 @@ const FamilyChoreApp = () => {
       const task = snapshot.val() || {};
       const completed = Array.isArray(task.completed) ? task.completed : Object.values(task.completed || {});
       if (!completed.includes(currentChildId)) {
-        await set(taskRef, { ...task, completed: [...completed, currentChildId] });
+        await update(taskRef, { completed: [...completed, currentChildId] });
       }
     } catch (error) {
       setErrorMsg(error.message);
@@ -827,10 +850,11 @@ const FamilyChoreApp = () => {
       const taskRef = ref(database, `families/${familyId}/childTasks/${taskId}`);
       const snapshot = await get(taskRef);
       const task = snapshot.val() || {};
-      await set(taskRef, {
-        ...task,
-        accepted: (task.accepted || []).filter(id => id !== currentChildId),
-        completed: (task.completed || []).filter(id => id !== currentChildId)
+      const accepted = Array.isArray(task.accepted) ? task.accepted : Object.values(task.accepted || {});
+      const completed = Array.isArray(task.completed) ? task.completed : Object.values(task.completed || {});
+      await update(taskRef, {
+        accepted: accepted.filter(id => id !== currentChildId),
+        completed: completed.filter(id => id !== currentChildId),
       });
     } catch (error) {
       setErrorMsg(error.message);
