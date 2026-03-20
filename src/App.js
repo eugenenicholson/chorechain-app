@@ -774,8 +774,6 @@ const FamilyChoreApp = () => {
     });
 
     // Write tasks — only write new tasks, never overwrite ones with existing progress
-    // Use individual set() calls for new tasks only, preserving any completed/accepted state
-    const tasksRef = ref(database, `families/${fid}/childTasks`);
 
     // Only write tasks that don't already exist in the database, or exist but have no progress
     const writePromises = Object.entries(newTasks).map(async ([taskId, task]) => {
